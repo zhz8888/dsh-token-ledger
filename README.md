@@ -328,6 +328,7 @@ The READMEs carry what you need to use the plugin. The rest lives in
 | [Configuration](docs/CONFIGURATION.md) | Every key the plugin reads. |
 | [Compatibility](docs/COMPATIBILITY.md) | Which DSH it needs, and what it touches. |
 | [Development and releasing](docs/DEVELOPMENT.md) | Working on the plugin, and publishing it. |
+| [Publishing to npm](docs/PUBLISHING.md) | The manual publish path, for a first release under a scope. |
 | [Verification](docs/VERIFICATION.md) | What was actually checked, and what was not. |
 
 Every document exists in both languages; the switcher is at the top of each one.

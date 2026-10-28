@@ -4,15 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.3] - 2026-10-28
 
 ### Changed
 
-- **The READMEs are the surface now; the depth moved to `docs/`.** The two READMEs halved
-  — 804 lines down to 396, and 674 down to 359 — and carry only what is needed to *use*
-  the plugin: what it is, how to install it, what it needs, what it counts, what it
-  touches, and where to go when something is wrong. Everything deeper became a
-  standalone document, one per subject:
+- **Both READMEs were restructured for a public repository, then slimmed, with the depth
+  moved to `docs/`.** They first gained the shape a public project is read with — a table
+  of contents, a quick start, a requirements table, a troubleshooting section, and the
+  contributing, security, support and acknowledgements sections, the same set in both
+  languages with the anchors to match — and then halved: 804 lines down to 396, and 674
+  down to 359, carrying only what is needed to *use* the plugin. Everything deeper became
+  a standalone document, one per subject:
 
   | Document | What it holds |
   | --- | --- |
@@ -32,6 +34,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   summarised — the same 44 sections in the same order, with the 37 captured command
   outputs byte-identical, so the two files can be read side by side.
 
+  Two things were corrected in passing. The English README quoted the settings page's
+  **Chinese** labels, while an English-locale host shows `Est. cost`, `Cost`, `Cache read`,
+  `Uncached input`, `priced from`, `{n} other low-cost sessions`, `summed` and
+  `of which plan` — the page registers both dictionaries with the host's locale service.
+  And the release example tagged `v1.0.0`, a version that has been on the registry since
+  1.0, which now uses the current version and says that the tag has to match the manifest.
+
   The CI job that asserts the published tarball now also requires `docs/README.md`,
   because the READMEs link into `docs/` and npm resolves those links against the
   repository — the index has to travel with the package.
@@ -50,20 +59,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   fork's holder is added beside it. The captures in
   [`docs/VERIFICATION.md`](docs/VERIFICATION.md) still show the old name, because they
   are what the commands printed at the time; that file records the rename separately.
-
-- **Both READMEs now read like a public repository's.** A table of contents, a quick start,
-  a requirements table, a troubleshooting section, and the contributing, security, support and
-  acknowledgements sections a public project is expected to have — the same section set in
-  both languages, with the anchors to match. The technical content is unchanged; what moved
-  is the order and the framing, so that the DSH version, the install command and the issue
-  tracker are reachable in the first screen instead of the fortieth line.
-
-  Two things were corrected in passing. The English README quoted the settings page's
-  **Chinese** labels, while an English-locale host shows `Est. cost`, `Cost`, `Cache read`,
-  `Uncached input`, `priced from`, `{n} other low-cost sessions`, `summed` and
-  `of which plan` — the page registers both dictionaries with the host's locale service.
-  And the release example tagged `v1.0.0`, a version that has been on the registry since
-  1.0, which now uses the current version and says that the tag has to match the manifest.
 
 - **The package manager is pnpm.** `package-lock.json` is gone, `pnpm-lock.yaml` replaces it,
   and `package.json` carries `packageManager: pnpm@11.20.0` so the version is declared once
@@ -1012,7 +1007,11 @@ so both now have regression tests.
 - Zero runtime dependencies, zero peer dependencies and no install scripts, so
   the package installs without a build step.
 
-[Unreleased]: https://github.com/zhz8888/dsh-token-ledger/compare/v1.1.2...HEAD
+[Unreleased]: https://github.com/zhz8888/dsh-token-ledger/compare/v1.1.3...HEAD
+[1.1.3]: https://github.com/zhz8888/dsh-token-ledger/compare/v1.1.2...v1.1.3
+[1.1.2]: https://github.com/zhz8888/dsh-token-ledger/compare/v1.1.1...v1.1.2
+[1.1.1]: https://github.com/zhz8888/dsh-token-ledger/compare/v1.1.0...v1.1.1
+[1.1.0]: https://github.com/zhz8888/dsh-token-ledger/compare/v1.0.1...v1.1.0
 [1.0.0]: https://github.com/zhz8888/dsh-token-ledger/compare/v0.8.0...v1.0.0
 [0.8.0]: https://github.com/zhz8888/dsh-token-ledger/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/zhz8888/dsh-token-ledger/compare/v0.7.1...v0.7.2

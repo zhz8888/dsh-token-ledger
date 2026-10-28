@@ -14,6 +14,7 @@ behind it — the rules, the arguments and the evidence.
 | [Configuration](CONFIGURATION.md) | Every key the plugin reads, what each one changes, and where the history comes from. |
 | [Compatibility](COMPATIBILITY.md) | Which DSH it needs and why that range is load-bearing, the compatibility matrix, and what the plugin touches on your machine. |
 | [Development and releasing](DEVELOPMENT.md) | Working on the plugin, and publishing it. |
+| [Publishing to npm](PUBLISHING.md) | The manual publish path, for the first release under a scope. |
 | [Verification](VERIFICATION.md) | What was actually checked, on what, and what was not. |
 
 Every document exists in both languages — the switcher is at the top of each one.

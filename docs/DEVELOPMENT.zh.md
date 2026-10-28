@@ -41,11 +41,14 @@ DOM 属性，React 会报出来，而手写的 `createElement` 会默默接受�
 **打一个 tag 就是发布。不需要在任何地方存放 token。**
 
 ```bash
-git tag v1.1.2 && git push origin v1.1.2
+git tag v1.1.3 && git push origin v1.1.3
 ```
 
 tag 必须与 `package.json` 里的版本一致——workflow 不一致就拒绝发布——所以请用清单里
 那个版本，而不是照抄这个例子。
+
+这是**第一次之后**每次发布走的路。第一次发布不能用它：OIDC 无法为一个还不存在的包
+配置，所以第一次得手动发——见[发布到 npm](PUBLISHING.zh.md)。
 
 `release.yml` 会跑测试与打包检查、确认 tag 与 `package.json` 一致、用 OIDC
 **trusted publishing** 发布、把 tarball 挂到 GitHub Release 上，并在报告成功之前

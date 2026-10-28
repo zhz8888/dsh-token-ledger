@@ -47,11 +47,15 @@ and how, including the evidence behind the fork rule.
 **A tag push publishes. No token is stored anywhere.**
 
 ```bash
-git tag v1.1.2 && git push origin v1.1.2
+git tag v1.1.3 && git push origin v1.1.3
 ```
 
 The tag must match the version in `package.json` — the workflow refuses to publish
 otherwise — so use the version that is in the manifest, not this example.
+
+This is the path for every release **after** the first one. A first release cannot
+use it: OIDC cannot be configured for a package that does not exist yet, so the
+first publish is done by hand — see [Publishing to npm](PUBLISHING.md).
 
 `release.yml` then runs the tests and the packaging checks, confirms the tag matches
 `package.json`, publishes over OIDC **trusted publishing**, attaches the tarball to a

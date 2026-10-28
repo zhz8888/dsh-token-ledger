@@ -300,6 +300,7 @@ README 讲的是怎么**用**这个插件；其余细节都在 [`docs/`](docs/RE
 | [配置](docs/CONFIGURATION.zh.md) | 插件会读到的每一个配置项。 |
 | [兼容性](docs/COMPATIBILITY.zh.md) | 需要哪个 DSH，以及它会碰什么。 |
 | [开发与发布](docs/DEVELOPMENT.zh.md) | 怎么改这个插件，以及怎么发布它。 |
+| [发布到 npm](docs/PUBLISHING.zh.md) | 手动发布那条路，用于一个 scope 下的第一次发布。 |
 | [验证记录](docs/VERIFICATION.zh.md) | 实际验证了什么，以及哪些没有验证。 |
 
 每一篇都有中英两个版本，语言切换在每篇的开头。英文索引在
