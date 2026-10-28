@@ -1,5 +1,9 @@
 # Verification
 
+English | [中文](VERIFICATION.zh.md)
+
+[← Back to the README](../README.md)
+
 What was actually verified for `dsh-token-ledger`, on what, and how. The
 point of this file is to be checkable and to state its own gaps.
 

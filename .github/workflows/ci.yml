@@ -90,6 +90,9 @@ jobs:
             echo "$listing" | grep -qx "$required" || { echo "missing from tarball: $required"; exit 1; }
           done
           echo "$listing" | grep -q '^package/docs/VERIFICATION.md$' || { echo 'missing docs'; exit 1; }
+          # The docs index has to travel with the package: the READMEs link into
+          # docs/, and npm resolves those links against the repository.
+          echo "$listing" | grep -q '^package/docs/README.md$' || { echo 'missing docs index'; exit 1; }
           # Everything shipped under docs/ has to be Markdown. `docs/` is listed
           # wholesale in `files`, so any other file lands in the tarball too —
           # that is how a scratch HTML preview of the vendor marks got published.

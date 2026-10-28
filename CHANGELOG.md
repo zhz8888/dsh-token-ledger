@@ -8,6 +8,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The READMEs are the surface now; the depth moved to `docs/`.** The two READMEs halved
+  — 804 lines down to 396, and 674 down to 359 — and carry only what is needed to *use*
+  the plugin: what it is, how to install it, what it needs, what it counts, what it
+  touches, and where to go when something is wrong. Everything deeper became a
+  standalone document, one per subject:
+
+  | Document | What it holds |
+  | --- | --- |
+  | [`docs/COUNTING.md`](docs/COUNTING.md) | The counting rules, forks versus resumes, and the audit. |
+  | [`docs/SETTINGS-PAGE.md`](docs/SETTINGS-PAGE.md) | The three views in full. |
+  | [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) | Every key the plugin reads. |
+  | [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) | Which DSH it needs, and what it touches. |
+  | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | Working on the plugin, and publishing it. |
+  | [`docs/VERIFICATION.md`](docs/VERIFICATION.md) | What was actually checked, and what was not. |
+
+  Every one of them exists in Chinese as well (`*.zh.md`), each carries a language
+  switcher at the top and a link back to the README, and `docs/README.md` is the
+  index. The prose was **moved, not rewritten**: the sentences in the documents are
+  the sentences that were in the README.
+
+  `docs/VERIFICATION.md` gained a Chinese counterpart, translated rather than
+  summarised — the same 44 sections in the same order, with the 37 captured command
+  outputs byte-identical, so the two files can be read side by side.
+
+  The CI job that asserts the published tarball now also requires `docs/README.md`,
+  because the READMEs link into `docs/` and npm resolves those links against the
+  repository — the index has to travel with the package.
+
 - **The package and the repository moved to `zhz8888`.** The package was published as
   `@chenmiao8563/dsh-token-ledger`; it is now `@zhz8888/dsh-token-ledger`, and the
   repository, the issue tracker, the clone URL and the npm Trusted Publisher setup all

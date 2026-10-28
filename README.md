@@ -12,39 +12,10 @@ English | [中文](README.zh.md)
 
 ---
 
-## Contents
-
-- [What this is](#what-this-is)
-- [Quick start](#quick-start)
-- [Requirements](#requirements)
-- [Screenshots](#screenshots)
-- [Why it installs where others do not](#why-it-installs-where-others-do-not)
-- [Install](#install)
-- [Counting rules](#counting-rules)
-- [CLI](#cli)
-- [Settings page](#settings-page) — [Overview](#overview) · [Rates](#rates) · [Bill](#bill)
-- [Configuration](#configuration)
-- [What it deliberately does not do](#what-it-deliberately-does-not-do)
-- [Permissions](#permissions)
-- [Compatibility](#compatibility)
-- [Troubleshooting](#troubleshooting)
-- [Uninstall](#uninstall)
-- [Development](#development)
-- [Contributing](#contributing)
-- [Security](#security)
-- [Support](#support)
-- [Acknowledgements](#acknowledgements)
-- [Releasing](#releasing)
-- [License](#license)
-
----
-
-## What this is
-
-A ledger, not a dashboard. It folds the durable DSH session log into token
-totals, keeps them restart-safe, and — the part that matters — lets you
-**recompute the exact same numbers from the raw logs and diff them** against
-what the running host recorded.
+A ledger, not a dashboard. It folds the durable DSH session log into token totals,
+keeps them restart-safe, and — the part that matters — lets you **recompute the
+exact same numbers from the raw logs and diff them** against what the running host
+recorded.
 
 ```
 $ dsh-token-ledger audit
@@ -59,12 +30,33 @@ scanned 139 session log(s), 344203 events, 29 forked session(s), 0 unreadable
 If you only want a pretty chart, there are a dozen plugins for that. This one is
 for when you need to *defend* the number.
 
-Since 0.5 the settings page has three tabs: **Overview** (the ledger, with what each
-period cost), **Rates** (a price list for each vendor's newest models, with the live
-USD/CNY rate) and **Bill** (the same usage turned into money — four groupings stacked
-over five periods each, exportable as CSV or JSON in one file). The bill names the
-price source, the rate and every price it could not apply, so the number can be
-checked. See [Settings page](#settings-page).
+The settings page has three tabs — **Overview** (the ledger, with what each period
+cost), **Rates** (a price list for each vendor's newest models, with the live
+USD/CNY rate) and **Bill** (the same usage turned into money — four groupings
+stacked over five periods each, exportable as CSV or JSON in one file) — and a CLI
+that works with no host running at all.
+
+## Contents
+
+- [Quick start](#quick-start)
+- [Requirements](#requirements)
+- [Screenshots](#screenshots)
+- [Why it installs where others do not](#why-it-installs-where-others-do-not)
+- [Install](#install)
+- [CLI](#cli)
+- [The settings page](#the-settings-page)
+- [How the numbers are counted](#how-the-numbers-are-counted)
+- [Configuration](#configuration)
+- [What it deliberately does not do](#what-it-deliberately-does-not-do)
+- [Permissions](#permissions)
+- [Troubleshooting](#troubleshooting)
+- [Uninstall](#uninstall)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [Security](#security)
+- [Support](#support)
+- [Acknowledgements](#acknowledgements)
+- [License](#license)
 
 ## Quick start
 
@@ -95,72 +87,22 @@ optional.
 
 | | Requirement | Notes |
 | --- | --- | --- |
-| **DSH** | `^0.2.0-rc.1` | Verified against `0.2.1-rc.3`. Load-bearing: DSH skips a plugin whose range excludes the running harness. See [What DSH it needs](#what-dsh-it-needs). |
+| **DSH** | `^0.2.0-rc.1` | Verified against `0.2.1-rc.3`. Load-bearing: DSH skips a plugin whose range excludes the running harness. See [Compatibility](docs/COMPATIBILITY.md). |
 | **Node** | ≥ 22.15.0 | The CLI decodes Zstandard frames. The host half needs nothing version-specific. |
 | **Profile** | Any | The settings page needs a profile with a web server (`web` or `desktop`); `/tokens` and the CLI work everywhere. |
 | **Network** | Optional | Only the price list and the USD/CNY rate are fetched. `rates: false` removes every request. |
 | **Disk** | A writable `<DSH_HOME>/token-ledger/` | The only directory it writes to, besides the exports you ask for. |
 
-### What DSH it needs
-
-**DSH `^0.2.0-rc.1`** — 0.2.1-rc.3 is the version this is currently verified against, and
-the floor is written as `0.2.0-rc.1` because that is how this ecosystem spells a
-prerelease range. The `^` puts the ceiling at `0.3.0`.
-
-This range is load-bearing rather than decorative: DSH compares it against the running
-harness at startup and **skips a plugin whose range excludes it**. `^0.1.2-rc.1` — the
-range 1.0.0 shipped with — does not accept `0.2.0-rc.2`, so 1.0.0 was silently skipped
-by every 0.2 harness and 1.0.1 exists to fix exactly that. A `0.1.x` harness is now
-outside the declared range.
-
-The same range is also declared as `engines.dsh`, which is the field a plugin market's
-compatibility preflight reads and displays — `dshmarket` derives its verdict from that field
-together with the host peers, and shows the conjunction of everything declared. Both carry
-the identical string, so the market shows one requirement rather than a conjunction of two
-spellings of it, and the two cannot drift apart without someone editing both.
-
-The requirement is declared the way the ecosystem actually reads it — as
-`peerDependencies` on the five host packages the two halves bind to:
-
-| Peer | Why this plugin names it |
-| --- | --- |
-| `@deepseek-ai/dsh-session-persistence` | It provides `sessionPersistence`, which is where the ledger's usage comes from. |
-| `@deepseek-ai/dsh-commands` | It provides `commands`, which registers `/tokens`. |
-| `@deepseek-ai/dsh-host-webserver` | It provides `webServer`, which serves the three settings routes. |
-| `@deepseek-ai/dsh-client-locale` | The browser half injects it for the translated labels. |
-| `@deepseek-ai/dsh-client-ui-settings-general` | The browser half injects it to add its section to the settings sidebar. |
-
-Every one is **optional**, and that is deliberate rather than a hedge. DSH does not
-hoist host packages into a profile's `node_modules`, so a required peer would report
-an unmet dependency on every install and mean nothing. Optional is also what keeps the
-declaration honest about this plugin's own behaviour: a profile with no web server
-skips the settings page and keeps `/tokens` and the CLI, and a headless or TUI profile
-never has the client packages at all.
-
-What makes the declaration useful is that DSH resolves it against the install that is
-actually running. Its profile checker reads a peer from the plugin's own `node_modules`
-first, then the profile tree, then **the DSH installation itself**
-(`node_modules/dshmarket/lib/check.js`), and compares the result to the range above —
-so an unsupported harness is reported instead of silently mounting. Earlier versions of
-this package declared `dsh.compatibility.dsh` instead, which nothing in DSH reads; 1.0
-removed it rather than leave a field that looks like a promise and is not one. The
-`dsh.compatibility.dshReleases` map that replaced it is a declaration for a store to
-read — it names the releases this has actually been checked against — and it is not
-what DSH evaluates at mount. The gate is the peer range above.
-
-The declarations cost a consumer nothing: optional peers are not installed, and the
-package still ships with no runtime dependencies and no install scripts.
-
 ## Screenshots
 
-The settings page's tabs, captured on a real ledger — the totals are this machine's:
+The settings page's tabs, captured on a real ledger:
 
 **Overview**, with the month's totals, today's usage and a year of activity:
 
 ![Overview tab: month totals, today's usage, and the year's activity heatmap](assets/screenshots/01-overview.jpg)
 
-**The calendar**, which is where a month's shape lives — busiest day, lightest day, the
-day that ran latest — above the same usage broken down by model:
+**The calendar**, where a month's shape lives — busiest day, lightest day, the day
+that ran latest — above the same usage broken down by model:
 
 ![Calendar view: month heatmap with the busiest, lightest and latest day, and usage by model](assets/screenshots/02-calendar.jpg)
 
@@ -168,8 +110,7 @@ day that ran latest — above the same usage broken down by model:
 
 ![Seven-day token totals as bars, with usage by model](assets/screenshots/03-weekly.jpg)
 
-**Rates**: the live USD/CNY rate and each vendor's published price list, each price
-editable by hand for the times the network is not there:
+**Rates**: the live USD/CNY rate and each vendor's published price list:
 
 ![Rates tab: USD/CNY rate and per-vendor model prices](assets/screenshots/04-rates.jpg)
 
@@ -217,37 +158,6 @@ In the conversation, `/tokens` prints the ledger:
 
 The ledger is written to `<DSH_HOME>/token-ledger/ledger.json`.
 
-## Counting rules
-
-The numbers are only useful if you know exactly what they count.
-
-| Rule | Behaviour |
-| --- | --- |
-| **Successful anchors only** | Usage is taken from `assistant/message` (a completed step) and `compaction/summary` (one compaction call). A failed or cancelled attempt never appends either, so it is never counted. |
-| **Streaming samples are replaced, not added** | When a step emits a `usage` chunk and then its final message, the final value replaces the earlier sample — one call either way. |
-| **`totalTokens` is derived** | It is the sum of the four buckets, never the provider's own total field. Across 15,778 real usage reports the two agreed every single time, and deriving it keeps the buckets and the total consistent by construction. |
-| **Reasoning tokens are a subset** | Reported separately, never added into the total, because they are already inside `outputTokens`. |
-| **Local calendar days** | Days are your days, not UTC days. |
-| **Forks are cut, resumes are not** | See below. |
-
-### Forks versus resumes
-
-A stored log can begin with a prefix of history that was already recorded. Two
-different situations produce one, and getting them confused is the most common
-way a usage plugin silently gets the wrong answer:
-
-- **Fork** (`parentSession` set): the prefix is the *parent's* history, counted
-  in the parent's own log. Counting it again here would double count. It is cut.
-- **Resume** (no parent): the prefix is *this session's own* earlier history,
-  stored once. Cutting it would lose tokens. Nothing is cut.
-
-This is not a guess. Against real logs, every forked session whose parent log was
-still present had its pre-marker usage fingerprints contained in the parent's,
-while the non-forked logs carrying the same marker never repeated their prefix
-later in the file. On one real 139-session home the distinction was worth
-79.9 million tokens of double counting that a naive "count every log" pass
-reports.
-
 ## CLI
 
 Works without DSH running — it reads the raw logs directly.
@@ -274,204 +184,35 @@ dsh-token-ledger help    [options]       print the usage text
 Exit codes: `0` success or audit match, `1` audit found a real difference,
 `2` bad usage or an unreadable input. That makes it usable as a scheduled check.
 
-### The audit distinguishes two kinds of difference
-
-A running host writes its ledger on a debounce, so a live session is routinely a
-little ahead of the stored file. Reporting that as corruption would make the
-audit useless. The ledger's own `updatedAt` settles it:
-
-- a differing session whose newest event is **newer than the ledger** has simply
-  kept running → *match*, with the unflushed amount reported;
-- a differing session whose newest event **predates the ledger**, or a day/model
-  row that contradicts the fold it should sum to → *mismatch*, exit 1.
-
-```
-  audit: match — 1 session(s) advanced after the ledger was written
-         (1 calls, 5100 tokens not yet flushed)
-```
-
-## Settings page
+## The settings page
 
 The browser half adds a **Token ledger** section to the settings sidebar, with
-three tabs: **Overview**, **Rates** and **Bill**. Its own labels are registered with
-the host's locale service, so they follow the host's language.
+three tabs. Its own labels are registered with the host's locale service, so they
+follow the host's language.
 
-### Overview
+- **Overview** — the month's totals, today live, a usage calendar, and a per-model
+  breakdown, with what each period cost.
+- **Rates** — the live USD/CNY rate and each vendor's published prices, every one
+  of them editable by hand for the times the network is not there.
+- **Bill** — the same usage as money: workspace, session, model and vendor
+  stacked, each with its own period, one CSV or JSON export for all of it.
 
-- **Range totals** for this month, this year, the last 7 days and **all of it** —
-  total tokens, cache hit rate, call count, **Est. cost** and the
-  four-bucket breakdown behind them. *All* is every day the ledger holds, starting at its
-  first day. The cache hit rate is `cacheRead / (cacheRead + uncachedInput)`: the
-  share of input the prompt cache absorbed, so a route with no caching reads 0%
-  rather than undefined.
-- **The estimated cost is the bill's own arithmetic**, computed on the host for each
-  of the overview's periods, so the number under *this month* and the bill's month
-  are the same number rather than two estimators that agree today. It is shown in
-  yuan to two decimals, with the rate it converted at. A host that has no prices yet
-  shows a dash and says why instead of a confident `¥0.00`, and tokens the bill could
-  not price are named underneath the number they are missing from.
-- **Today, live** — today's tokens, hit rate, calls and cost, refreshed once a
-  minute.
-- **A usage calendar** switchable between year, month and week. Year and month are
-  heatmaps; the week view is one horizontal bar per day. Heat levels are relative
-  to the busiest day in the window and square-rooted, so one huge day cannot
-  flatten the rest. The month view also carries a summary beside the grid: the
-  busiest day, the lightest weekday and the weekday that ran latest (compared by
-  the clock time of the day's last call).
-- **Per model** totals, each with its own hit rate and a stacked bar showing where
-  the tokens went, with a key naming each bucket that appears. A bucket with no tokens
-  anywhere — cache writes, on vendors that publish no cache-write price — is left out
-  of the bar and the key rather than being a colour nobody can find in a bar.
+[The settings page in full](docs/SETTINGS-PAGE.md) — what each view shows, and
+where every price on it came from.
 
-### Rates
+## How the numbers are counted
 
-- **The USD/CNY rate** in its own box, to four decimals, with its source and how
-  long ago it was fetched. This tab is a price list: it states prices and converts
-  them for display, and says on the page that the cost arithmetic lives on the
-  **Bill** tab, where it is applied to the ledger.
-- **Each vendor's newest models**, two to three per vendor, with the published
-  price per million tokens for input, output, cache read and cache write. A USD
-  price is converted into yuan with the rate above; every converted cell keeps the
-  dollar quote it came from in its tooltip, and with no rate fetched the table falls
-  back to USD and labels its column in dollars rather than printing a number it
-  cannot stand behind. A price the vendor does not publish is a dash, which is a
-  different claim from "free", and a published `0` is flagged as *not necessarily
-  free* because some platforms bill by the hour and publish no per-token price.
-- **Prices come from where the vendors publish them.** None of these vendors
-  exposes prices through an API — their model-list endpoints return ids and no
-  money, so the number only exists on their pricing page. Where that page can be
-  read, it is: **DeepSeek, Z.ai and Tencent** are priced from their own pages, and
-  their group carries a `vendor` badge — the mark that says this price came from the
-  vendor itself. The rest come from a per-vendor
-  public dataset ([models.dev](https://models.dev)); `rates.source: openrouter`
-  switches the whole table to that gateway's own quotes, which cover more models but
-  are not the vendors' list prices. The page says which is which, because those are
-  different claims.
-- **DeepSeek shows peak and off-peak separately.** Its page prices two models in
-  yuan across cache-hit input, cache-miss input and output, each with a peak and an
-  off-peak column — off-peak being half of peak outside 09:00–12:00 and 14:00–18:00
-  Beijing time on weekdays. Each period is its own labelled row, and the window is
-  quoted from the vendor's own page. A vendor that publishes in yuan is displayed in
-  yuan, unconverted.
-- **The twelve vendors worth listing**, each with its own mark drawn inline from
-  bundled geometry: OpenAI, Anthropic, Google, DeepSeek, Qwen, xAI, Z.ai, Kimi,
-  MiniMax, Tencent, Xiaomi and ByteDance. The marks are the official ones — taken
-  from the vendors' own sites or from Simple Icons — and are the trademarks of their
-  owners, used to identify whose price is shown. A vendor outside this list still
-  gets a mark and a place when a source carries it; `rates.vendors: 0` publishes
-  every vendor.
-- **Hand entry.** Any price, and the rate itself, can be typed over — in the
-  currency the table is showing. A typed value outranks every later fetch, and a
-  row whose number actually changed is marked as hand-entered; typing the value
-  the fetch already produces leaves the row unmarked, since a refresh would not
-  change it. Either way the row can be handed back to the fetched value or
-  cleared. There is also a free-form entry row for a model that no fetch has
-  described.
-- **Refresh on demand, then settle each disagreement.** A button on the prices
-  card runs the same fetch the timer would, without waiting up to half an hour
-  for it; a fetch that could not reach a source says so instead of reporting a
-  save. When the official price for a model you typed over has moved, the model
-  is listed on its own with both numbers and one question — use the official
-  price, or keep yours. "Use official" deletes the typed value, handing the field
-  back to the catalogue rather than freezing it at today's number; "keep mine"
-  records the official number that was on screen, so the same disagreement is
-  not raised again until the catalogue actually moves.
-- **Offline is a state, not an error.** The host refreshes prices and the rate
-  every 30 minutes. A failed refresh keeps the last good result and reports the
-  attempt as failed, so a firewalled machine sees the last known prices with a
-  visible age rather than a blank page. A host that has never reached the network
-  says so and points at the hand-entry form; a host configured with
-  `rates: false` makes no request at all and is a price list you maintain.
+| Rule | Behaviour |
+| --- | --- |
+| **Successful anchors only** | Usage is taken from a completed step and from a compaction call. A failed or cancelled attempt never appends either, so it is never counted. |
+| **Streaming samples are replaced, not added** | When a step emits a `usage` chunk and then its final message, the final value replaces the earlier sample — one call either way. |
+| **`totalTokens` is derived** | It is the sum of the four buckets, never the provider's own total field. |
+| **Reasoning tokens are a subset** | Reported separately, never added into the total, because they are already inside `outputTokens`. |
+| **Local calendar days** | Days are your days, not UTC days. |
+| **Forks are cut, resumes are not** | A fork's prefix belongs to the parent session; a resume's prefix is this session's own. |
 
-### Bill
-
-The same usage, grouped the way a bill is read. **Four groupings are stacked** —
-workspace, session, model, vendor — rather than put behind a tab, because the
-question a bill answers is usually comparative, and **each section carries its own
-period**, so this month by workspace can sit above today by model.
-
-- **What each row shows**: the group, **the cost** (`Cost`), cache-read input
-  (`Cache read`), the input that missed the cache (`Uncached input`), output, the cache hit
-  rate, and the call count. The two input columns are separate because they are priced
-  differently on every vendor that prices them at all; cache-write input is stated
-  under each table rather than as a column that would be a dash nearly everywhere.
-- **Names that mean something**: a workspace row is the `cwd` the ledger recorded for
-  the sessions that ran there; a session row reads `workspace/session-name`, using the
-  title DSH itself gave the session (falling back to the session id for sessions DSH
-  never titled, with the full id and path in the tooltip); a model row reads
-  `provider/model` — the route the ledger recorded, the same name the overview's model
-  list shows — with the price row it was billed at in the tooltip.
-- **A vendor row is a provider you connected, not a price list.** `bos`, `qwen-plan`,
-  `deepseek-official` and `zai` are endpoints; `deepseek`, `qwen` and `z-ai` are whose
-  list prices their tokens carry. The row shows the provider — under the display name
-  the model settings page gives it, so `BOS-API` rather than `bos`, read from the
-  harness settings file and never written to it — and states the price source
-  underneath (`priced from deepseek`). Two endpoints serving the same model are therefore
-  two rows, which is the question a vendor bill exists to answer.
-- **Five periods per section**: this month, this year, the last 7 days, today, or
-  everything, using the same trailing-window definitions as the overview.
-- **The session list is summarised; the file is not.** A session asked once and archived
-  is a row that says nothing, and a machine collects hundreds of them, so the sessions
-  that are **cheap or barely used — under ¥1, or fewer than 10 calls** — stand in one
-  line on the page (`{n} other low-cost sessions`, badged `summed`, with their columns
-  summed). The total does not move: the rows still add up to it. A note under the table
-  says how many were summarised and what the rule was, and **the export always lists
-  every session** —
-  `format=csv` is the complete record. Two things are never folded: a session whose
-  tokens could not be priced, and a list where every row qualifies.
-  `bill.smallSessionCost`, `bill.smallSessionCalls` and `bill.foldSmallSessions: false`
-  change the rule or turn it off. Only the session dimension folds.
-- **One export for all of it, top right.** CSV or JSON, carrying every grouping over
-  every period, with the currency on every row and **one `TOTAL` per section**. There
-  is deliberately no grand total: the periods overlap, and adding today to this week
-  to this month would count the same tokens four times. The CSV starts with a UTF-8
-  byte-order mark, without which Excel opens it in the system code page and a session
-  named `编写统计` arrives as `缂栧啓缁熻`; the JSON export has none, because a JSON
-  parser rejects a leading mark.
-- **By plan, without double counting.** `subscriptions` in the config takes monthly
-  plans, and the fee is spread over the days the bill covers: the 1st-to-10th of a
-  ¥199 month is ¥66.33, not ¥199. A vendor on a plan is billed its plan and the usage
-  it covers is shown beside it rather than added to it, because adding them would
-  charge for the same calls twice. Because a plan is one charge, on a grouping where
-  its vendor appears in several rows — workspaces, sessions, models — the plan is
-  *allocated* across those rows in proportion to the usage it covers, which is what
-  makes a section's rows add up to its total. A row billed partly by plan says so
-  (`of which plan`), and a plan whose vendor has no usage in the period is still billed,
-  because it was still paid for. A plan's `vendor` may name either the provider or the
-  price vendor (`bos` or `deepseek`); both resolve to the usage the plan covers.
-- **What it could not price is listed, not charged at zero**: each unpriced model
-  with its tokens, calls and the reason — no price for that model, an ambiguous name
-  that two vendors both publish, or a price in a currency the bill cannot convert.
-  Prices joined by name rather than by id are listed too, so a join can be checked
-  rather than trusted.
-- **A time-priced vendor is billed per side of its window.** DeepSeek prices peak
-  and off-peak differently, and the ledger records which calls fell inside the
-  window — 09:00–12:00 and 14:00–18:00 on weekdays, Beijing time — so the two are
-  priced at their own rates instead of being charged at one of them.
-- **The bill is an estimate, and says so.** It multiplies the tokens the session log
-  recorded by the published list price of the model the route named. It makes no
-  claim about what a provider invoices, which differs for failed, retried and
-  partially delivered requests, and it does not know about a plan's included quota
-  beyond what you tell it in the config.
-
-The page reads three loopback-only routes: `GET /api/token-ledger/summary` for the
-overview, `GET|POST /api/token-ledger/rates` for prices and the rate, and
-`GET /api/token-ledger/bill` for the bill. The overview polls once a minute, prices
-and the bill only while their view is open. All three refuse a
-non-loopback peer, so they stay private even if the web server is bound to
-`0.0.0.0`. The write half additionally requires a JSON content type — a
-cross-origin form cannot send one — and caps the body at 256 KiB.
-
-It needs a profile with a web server (the `web` or `desktop` profile). Without one,
-`/tokens` and the CLI still work, and the section says so instead of failing. Note
-that hand-entered prices are entered **on that page**: there is no command-line
-equivalent yet, so a headless profile can read the usage ledger but cannot type a
-price.
-
-None of the three views is published through a settings namespace. That would need a schema —
-a real dependency, and this package has none — and would rewrite `settings.yaml` on
-every debounce with data that is derived and reproducible. The ledger file stays the
-only store of record; prices live in `rates.json` beside it.
+[How the numbers are counted](docs/COUNTING.md) — the rules, how a fork is told
+from a resume, and what the audit's two kinds of difference mean.
 
 ## Configuration
 
@@ -484,125 +225,53 @@ Override the composition entry by its `id`:
     backfill: false                     # default: true — fold stored history on startup
     backfillLogs: false                 # default: true — read the session logs on disk too
     rates: false                        # default: true — false makes no network request at all
-    # rates also takes an object:
-    # rates:
-    #   source: modelsdev                # default: the per-vendor dataset; 'openrouter' for gateway quotes
-    #   refreshIntervalMs: 1800000       # default: 30 minutes
-    #   perVendor: 3                     # default: 3 newest models per vendor
-    #   vendors: 15                      # default: cap on how many vendors to publish; 0 for all
-    #   modelsUrl: 'https://…'           # default: per source — https://models.dev/api.json
-    #   fxUrl: 'https://…/latest/USD'    # default: open.er-api.com
-    # Monthly plans, for the bill's plan grouping. Each is amortized over the days
-    # a bill covers, so a partial month is billed partially.
-    subscriptions:
-      - vendor: deepseek                 # which vendor's usage this plan covers
-        plan: 'DeepSeek 包月'            # the name shown on the bill
-        amount: 199                      # the fee per month
-        currency: CNY                    # the currency the fee is quoted in
-        startedAt: '2026-09-01'          # optional: not billed before this day
-        endedAt: null                    # optional: not billed after this day
-        note: null                       # optional: free text, shown with the plan
-    # How the page shortens the session list. The export is never shortened, so these
-    # only change what is on screen.
-    # bill:
-    #   foldSmallSessions: true          # default: true — false lists every session on the page too
-    #   smallSessionCost: 1              # default: 1, in the bill's currency
-    #   smallSessionCalls: 10            # default: 10
 ```
 
-`rates: false` disables the pricing feature's networking entirely and leaves
-hand-entered values as the only source. That is the setting a strictly offline host
-wants; the rates page still works.
-
-### Where the history comes from
-
-A fresh install shows the ledger you already have rather than one that starts today. Two
-sources are folded at startup, and each session is owned — permanently — by whichever of
-them folded it first.
-
-- **The session logs on disk**,
-  `<DSH_HOME>/sessions/<project>/<session>/session.jsonl.zstd`. This is the durable record,
-  it is complete, and it needs nothing from the host: they are the same files `rebuild` and
-  `audit` read. Every session nobody has folded yet comes from here, which is what makes a
-  first install show its history instead of an empty page.
-- **`sessionPersistence`**, the host service. It covers what a log cannot — a session whose
-  file has not been written yet — and it is the incremental path for the sessions the live
-  event stream folded.
-
-They hand over different arrays: a log is the harness's compact row form, whose indices mean
-something else than the logical event list's. A cursor is therefore only ever advanced by the
-source that set it, and the other one refuses rather than re-counting a session. `backfillLogs:
-false` keeps the startup fold off the disk; `backfill: false` turns both off and starts empty.
-
-The disk fold reads one session per turn of the event loop, so a first run cannot stall the
-host, and it skips every log that has not been written since the previous pass from a single
-`stat`. A host that has run before pays nothing for history it already folded — only the first
-run, or the one after a session was resumed outside this host, opens a file.
+[Configuration](docs/CONFIGURATION.md) — every key, what it changes, and where the
+history comes from.
 
 ## What it deliberately does not do
 
-- **The overview states an estimate with its basis; the bill itemizes it.** The
-  overview shows an estimated cost (yuan, two decimals) in its range totals and in
-  today, computed by the bill's own arithmetic; the bill shows every grouping and
-  every period row by row. Both name the price source, the rate they converted at,
-  every price joined by name and every model that could not be priced, so the number
-  can be checked rather than believed. Neither is a provider invoice and neither
-  claims to be — see the Bill section above for what they leave out.
+- **The overview states an estimate with its basis; the bill itemizes it.** Both name
+  the price source, the rate they converted at, every price joined by name and every
+  model that could not be priced, so the number can be checked rather than believed.
+  Neither is a provider invoice and neither claims to be.
 - **No bundled price list.** Prices are fetched from a source you can choose — the
   default is each vendor's own list price — or typed by you. A price list shipped
   inside the package would be wrong within weeks and would have to be updated by a
   release.
-- **No model-facing tool.** A tool schema costs prompt tokens on every request
-  and shifts the cache prefix — a strange thing for a token-accounting plugin to
-  do. `/tokens` and the CLI cover the human cases.
+- **No model-facing tool.** A tool schema costs prompt tokens on every request and
+  shifts the cache prefix — a strange thing for a token-accounting plugin to do.
+  `/tokens` and the CLI cover the human cases.
 
 ## Permissions
 
-What the plugin does with the machine it runs on, stated so it can be checked rather than
-inferred:
+What the plugin does with the machine it runs on, stated so it can be checked rather
+than inferred:
 
 | Capability | What it actually does |
 | --- | --- |
-| **Files** | Reads the session logs under `<DSH_HOME>/sessions/`, read-only, and reads `<DSH_HOME>/settings.yaml` for the provider display names a bill shows. Writes two files in its own directory — `<DSH_HOME>/token-ledger/ledger.json` and `rates.json` — plus exports where you ask for them. Nothing outside that directory is written or removed; the one `unlink` in the codebase cleans up its own temporary file after a failed atomic write. |
-| **Network** | Plain HTTPS `GET`s, and only while the rates feature is on (it is on by default): the price catalogue (`models.dev`, or `openrouter` if that source is chosen), the USD/CNY rate, and at most three vendor pricing pages for vendors the catalogue does not price itself. `rates: false` removes every one of them and leaves hand-entered prices as the only source. A failed fetch keeps the last stored result rather than clearing it. The browser half makes no external request at all: its four `fetch` calls are same-origin requests to this plugin's own `/api/token-ledger/*` routes. |
-| **Commands** | No shell, no child process, no spawn: the runtime imports no `child_process` and calls no `exec`, `spawn` or `fork` — neither at install time nor at run time. What it exposes is the `/tokens` slash command, registered through the host's own `commands` service, and the `dsh-token-ledger` binary you run yourself. |
-| **Credentials** | None are read. `process.env` is consulted only to resolve `DSH_HOME` when no explicit home is passed; no provider API key, no `.credentials.yaml`, no keychain, no OAuth. Nothing about you leaves the machine: the only outbound requests are the price URLs above, and they carry an `accept` header and a user-agent, nothing else. |
-| **Install** | No `preinstall`, `install`, `postinstall` or `prepare` script; no runtime dependencies; no native binaries; no symlinks or submodules; and no `@deepseek-ai/*` component is disabled, replaced or duplicated. The one lifecycle script in the manifest is `prepublishOnly`, which runs the packaging checks when *this package* is published — it never runs on a consumer's install. |
+| **Files** | Reads the session logs under `<DSH_HOME>/sessions/`, read-only, and reads `<DSH_HOME>/settings.yaml` for the provider display names a bill shows. Writes two files in its own directory — `<DSH_HOME>/token-ledger/ledger.json` and `rates.json` — plus exports where you ask for them. Nothing outside that directory is written or removed. |
+| **Network** | Plain HTTPS `GET`s, and only while the rates feature is on: the price catalogue, the USD/CNY rate, and at most three vendor pricing pages. `rates: false` removes every one of them. The browser half makes no external request at all. |
+| **Commands** | No shell, no child process, no spawn — neither at install time nor at run time. What it exposes is the `/tokens` slash command and the `dsh-token-ledger` binary you run yourself. |
+| **Credentials** | None are read. `process.env` is consulted only to resolve `DSH_HOME`; no provider API key, no keychain, no OAuth. |
 
 Every claim above can be checked against the source — the imports, the URLs and the
-state directory are all in `lib/`, and `pnpm run verify` asserts the packaging invariants
-that keep the install side true.
-
-## Compatibility
-
-- **Node:** ≥ 22.15.0 (the CLI decodes Zstandard frames). The host half itself
-  needs nothing version-specific.
-- **DSH:** `^0.2.0-rc.1`, declared as optional peers on the five host packages it
-  binds to — see [What DSH it needs](#what-dsh-it-needs). Held against `0.2.1-rc.3`:
-  DSH's own compatibility evaluator accepts this manifest, and every interface the two
-  halves use — `ctx.on`, `ctx.inject`, `ctx.get`, `ctx.effect`, `commands.register`,
-  `sessionPersistence.list()/inspect()`, and the `settings.section` slot with
-  `ctx.slots.inject`/`ctx.slots.register` — is unchanged in the `0.2` line.
-  [`docs/VERIFICATION.md`](docs/VERIFICATION.md) records the last full in-app run, which
-  was on `0.1.2-rc.1`, and separately the `0.2.1-rc.3` mount this is held against.
-- **Profiles:** any. There is no profile-specific code.
-- **Network:** the rates tab fetches prices and the USD rate over HTTPS. This is
-  entirely optional: with no route to the internet the last fetched result is
-  still served from disk, hand-entered values still work, and `rates: false`
-  removes the requests altogether.
+state directory are all in `lib/`, and `pnpm run verify` asserts the packaging
+invariants that keep the install side true. The long form is in
+[Compatibility](docs/COMPATIBILITY.md).
 
 ## Troubleshooting
 
 **The plugin did not mount at all.**
 DSH skips a plugin whose declared DSH range excludes the running harness, and it
-says so in the host's own log rather than failing visibly. Check the range against
-your host: this one is `^0.2.0-rc.1`, so a `0.1.x` harness will not load it. See
-[What DSH it needs](#what-dsh-it-needs).
+says so in the host's own log. This one is `^0.2.0-rc.1`, so a `0.1.x` harness will
+not load it — see [Compatibility](docs/COMPATIBILITY.md).
 
 **The ledger is empty.**
-A fresh install shows the history already on disk, so an empty ledger usually
-means the disk fold is off or the logs are not where the plugin looks. Check both
-sides from the CLI, which reads the same files the host does:
+A fresh install shows the history already on disk, so an empty ledger usually means
+the disk fold is off or the logs are not where the plugin looks. Check both sides
+from the CLI, which reads the same files the host does:
 
 ```bash
 dsh-token-ledger rebuild --home ~/.dsh --write
@@ -610,19 +279,18 @@ dsh-token-ledger audit --home ~/.dsh
 ```
 
 `backfillLogs: false` turns the disk fold off, and `backfill: false` turns off both
-folds, leaving the ledger to start empty. The logs live at
-`<DSH_HOME>/sessions/<project>/<session>/session.jsonl.zstd`.
+folds, leaving the ledger to start empty.
 
 **The audit says "mismatch".**
 It distinguishes a live session that has not been flushed yet from a real
-disagreement, and only the second is a failure. The rule and the exit codes are in
-[The audit distinguishes two kinds of difference](#the-audit-distinguishes-two-kinds-of-difference).
+disagreement, and only the second is a failure — see
+[How the numbers are counted](docs/COUNTING.md).
 
 **The cost shows a dash, or the page says "no prices yet".**
 No price list is bundled — it would be wrong within weeks. Prices are fetched from
 a source you choose, or typed by you on the rates page, and a host with no prices
-yet says so instead of printing a confident `¥0.00`. If the host is offline, the
-last fetched result is still served from disk, with its age visible.
+yet says so instead of printing a confident `¥0.00`. Offline, the last fetched
+result is still served from disk, with its age visible.
 
 **`/tokens` is not registered.**
 The command is registered through the host's own `commands` service, which this
@@ -633,8 +301,7 @@ commands at all; the CLI is unaffected and still reads the ledger.
 The bill is an estimate computed from the tokens the session log recorded and the
 published list price of the model the route named. It is not an invoice, and it
 does not know about a provider's discounts, credits, plan quotas or failed and
-retried requests. What it leaves out is listed under
-[What it deliberately does not do](#what-it-deliberately-does-not-do).
+retried requests.
 
 **Starting over.**
 Delete `<DSH_HOME>/token-ledger/` and restart; the next start folds the history on
@@ -649,42 +316,22 @@ dsh plugin --profile web remove @zhz8888/dsh-token-ledger
 The ledger file is left alone on purpose — delete
 `<DSH_HOME>/token-ledger/` yourself to reset the history.
 
-## Development
+## Documentation
 
-This project is developed with pnpm, pinned by the `packageManager` field in
-`package.json`. The published package itself carries no dependencies.
+The READMEs carry what you need to use the plugin. The rest lives in
+[`docs/`](docs/README.md):
 
-```bash
-pnpm install         # devDependencies only: react, react-dom, and the slot registry DSH runs
-pnpm test            # 297 tests in 14 files
-pnpm run verify      # packaging invariants (dependency-free, no install scripts, no bare imports)
-```
+| Document | What it holds |
+| --- | --- |
+| [How the numbers are counted](docs/COUNTING.md) | The counting rules, forks versus resumes, and the audit. |
+| [The settings page](docs/SETTINGS-PAGE.md) | The three views in full. |
+| [Configuration](docs/CONFIGURATION.md) | Every key the plugin reads. |
+| [Compatibility](docs/COMPATIBILITY.md) | Which DSH it needs, and what it touches. |
+| [Development and releasing](docs/DEVELOPMENT.md) | Working on the plugin, and publishing it. |
+| [Verification](docs/VERIFICATION.md) | What was actually checked, and what was not. |
 
-`pnpm test` uses Node's built-in test runner. In a restricted environment where
-spawning a child process per test file is blocked, use
-`pnpm run test:single-process`.
-
-**What a change needs to take effect.** Both halves are read when the plugin mounts,
-so editing `lib/index.js` *or* `lib/client.js` needs a DSH restart (or a plugin
-reload) — refreshing the page is not enough, because the bundle's `rev` is computed
-at mount and an unchanged URL keeps the browser's cached copy. Measured, not assumed:
-with an isolated host running, a change to `lib/client.js` left both the served
-bundle and its `rev` (`d683dd523466`) untouched, while a restart changed the rev
-(`f55ee321db50`) and served the change. Exports are files, so if the one you are
-looking at came from before a fix, its timestamp will say so.
-
-The devDependencies are **test-only**. They are never installed for a consumer:
-the package ships with no runtime dependencies and no install scripts, its peers are
-optional declarations that nothing fetches, and `pnpm` does not install a dependency's
-devDependencies. They exist
-so the browser half can be checked against the real thing — React renders it, so
-a hook-order or DOM-prop mistake fails instead of passing silently, and
-`@deepseek-ai/dsh-client-ui-slots` validates the registration against the very
-registry that DSH runs. Without them installed the affected tests skip with a
-stated reason, so `pnpm test` still works from a fresh clone with no network.
-
-See [docs/VERIFICATION.md](docs/VERIFICATION.md) for what was actually verified
-and how, including the evidence behind the fork rule.
+Every document exists in both languages; the switcher is at the top of each one.
+The Chinese index is in [README.zh.md](README.zh.md#文档).
 
 ## Contributing
 
@@ -698,20 +345,11 @@ pnpm test          # 297 tests in 14 files
 pnpm run verify    # packaging invariants
 ```
 
-A change is ready when both gates pass and the diff carries nothing unrelated.
-Two conventions this repository keeps:
-
-- **The README is part of the package's contract.** The permissions table, the
-  counting rules and the compatibility range are all claims someone can check
-  against the source — the permissions table against `lib/`, the packaging
-  invariants in `scripts/verify-package.mjs`. A change that moves one of them
-  moves the document with it.
-- **Say what was measured.** `docs/VERIFICATION.md` records what was verified, on
-  what, and what was not. A new claim goes there with its evidence, or it does not
-  go in.
-
-Editing `lib/index.js` or `lib/client.js` needs a DSH restart to take effect — see
-[Development](#development) for why.
+A change is ready when both gates pass and the diff carries nothing unrelated. Two
+conventions this repository keeps: the README is part of the package's contract,
+and a new claim goes into [`docs/VERIFICATION.md`](docs/VERIFICATION.md) with its
+evidence or it does not go in. The rest —
+[Development and releasing](docs/DEVELOPMENT.md).
 
 ## Security
 
@@ -747,52 +385,6 @@ from a diagnosis.
 - The price catalogue for the vendors that publish no machine-readable price comes
   from [models.dev](https://models.dev); the DeepSeek, Z.ai and Tencent prices are
   read from those vendors' own pricing pages.
-
-## Releasing
-
-**A tag push publishes. No token is stored anywhere.**
-
-```bash
-git tag v1.1.2 && git push origin v1.1.2
-```
-
-The tag must match the version in `package.json` — the workflow refuses to publish
-otherwise — so use the version that is in the manifest, not this example.
-
-`release.yml` then runs the tests and the packaging checks, confirms the tag matches
-`package.json`, publishes over OIDC **trusted publishing**, attaches the tarball to a
-GitHub release, and asserts that the version is on the registry before it reports
-success — so a green run means published, not merely attempted.
-
-That last assertion is not decoration. This pipeline failed on every tag from v0.5.0
-to v0.8.0 while printing `404 Not Found - PUT`, which names a missing package when the
-real problem is a missing credential, and the failure left the registry looking empty
-for a couple of minutes after a publish that had in fact worked. Two causes, both now
-guarded inside the workflow:
-
-- **The npm CLI must be ≥ 11.5.1.** Node 22 ships npm 10, which cannot perform the
-  OIDC exchange at all. The workflow runs Node 24, and asserts the version in its log.
-- **`actions/setup-node`'s `registry-url` input must not be used.** It writes
-  `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}` into `.npmrc`, and npm reads
-  that line, concludes a credential is already configured, and skips trusted
-  publishing entirely — failing with `ENEEDAUTH`, which in a job that holds no
-  credential reads like "you forgot to log in". A step before the publish now fails
-  loudly if any `_authToken` line is present.
-
-For the npm side to accept it, the package needs a **Trusted Publisher** configured at
-npmjs.com (package → Settings → Trusted Publisher → GitHub Actions) with repository
-`zhz8888/dsh-token-ledger`, workflow `release.yml`, and **no environment** —
-an environment name that the workflow does not declare does not match, and the
-registry answers only `OIDC token exchange error - package not found`.
-
-Before trusted publishing existed, a version's first release was published by hand
-with `npm publish --access public --otp=<six digits>`, because OIDC cannot be
-configured for a package that does not exist yet. That path still works and still
-requires a granular token with 2FA bypass, but it produces no provenance attestation,
-and it is the path whose expired token started the v0.8.0 investigation. Prefer the tag.
-
-Re-running a release is safe: the publish step is skipped when the version is already
-on the registry, and the GitHub release is only created when it does not already exist.
 
 ## License
 
