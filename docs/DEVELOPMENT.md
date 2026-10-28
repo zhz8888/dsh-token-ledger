@@ -41,6 +41,14 @@ stated reason, so `pnpm test` still works from a fresh clone with no network.
 See [docs/VERIFICATION.md](VERIFICATION.md) for what was actually verified
 and how, including the evidence behind the fork rule.
 
+**Changing a wording needs no restart.** The Chinese and English entries live in
+`locale/zh.json` and `locale/en.json` as plain data: edit one and reload the
+page. The host reads the files when they are asked for rather than once at
+startup. The two languages must carry the same key set — a key missing from one
+of them means a reader gets a word in one language and the key itself in the
+other — and a test says so. When the browser half cannot read the dictionaries
+the section still appears and its labels fall back to the keys.
+
 
 ## Releasing
 

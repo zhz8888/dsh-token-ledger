@@ -1,16 +1,19 @@
 #!/usr/bin/env node
 /**
- * Check the Rates expansion over a real socket.
+ * Check the settings page routes over a real socket.
  *
- * The Rates page can expand a vendor to every model it has. This script drives
- * the plugin's own host half and its own route — with a stub transport, so it
- * needs no network — behind a real `node:http` server, and prints what comes
- * back. It is the run recorded under "The rates expansion" in
- * `docs/VERIFICATION.md`, kept so that the capture can be repeated.
+ * Two things this plugin's browser half cannot do on its own are checked here:
+ * the provider expansion (one provider's whole model list, served on demand)
+ * and the dictionaries (the texts, which live in `locale/*.json` rather than
+ * inside the browser half).
  *
- * Run it from the repository root: `node tools/rates-expansion-check.mjs`.
+ * The host half is driven with a stub transport — so it needs no network — the
+ * routes are the plugin's own, and the requests go over a real `node:http`
+ * server: the same three things the real host does, minus the network.
  *
- * @module dsh-token-ledger/tools/rates-expansion-check
+ * Run it from the repository root: `node tools/settings-routes-check.mjs`.
+ *
+ * @module dsh-token-ledger/tools/settings-routes-check
  */
 
 import { createServer } from 'node:http'
@@ -19,7 +22,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { createRatesService } from '../lib/rates-service.js'
-import { createRatesRoute } from '../lib/route.js'
+import { createI18nRoute, createRatesRoute } from '../lib/route.js'
+import { readDictionaries } from '../lib/locale.js'
 
 /**
  * One models.dev row.
@@ -77,7 +81,7 @@ const stubFetch = async (url) => {
   return { ok: true, status: 200, text: async () => text }
 }
 
-const dir = mkdtempSync(join(tmpdir(), 'token-ledger-expand-'))
+const dir = mkdtempSync(join(tmpdir(), 'token-ledger-routes-'))
 const path = join(dir, 'rates.json')
 const service = createRatesService({
   path,
@@ -93,12 +97,21 @@ const service = createRatesService({
 
 await service.refresh({ reason: 'verification' })
 
-const route = createRatesRoute({ rates: service })
+const routes = [createRatesRoute({ rates: service }), createI18nRoute({ dictionaries: readDictionaries() })]
 const server = createServer((req, res) => {
-  route.handler(req, res).catch(() => {
-    res.writeHead(500)
+  const route = routes.find((entry) => entry.path === req.url.split('?')[0])
+  if (route === undefined) {
+    res.writeHead(404)
     res.end('{}')
-  })
+    return
+  }
+  const result = route.handler(req, res)
+  if (result !== undefined && typeof result.catch === 'function') {
+    result.catch(() => {
+      res.writeHead(500)
+      res.end('{}')
+    })
+  }
 })
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
 const base = `http://127.0.0.1:${server.address().port}`
@@ -148,6 +161,20 @@ console.log(`GET /api/token-ledger/rates (foreign origin) -> ${foreign.status} $
 const cache = JSON.parse(readFileSync(path, 'utf8'))
 const cachedOpenai = cache.catalogue.vendors.find((entry) => entry.vendor === 'openai')
 console.log(`\nrates.json ${statSync(path).size} bytes; the cache keeps openai's whole list: ${cachedOpenai.allModels.length} rows`)
+
+const i18n = await get('/api/token-ledger/i18n')
+const dictionaries = JSON.parse(i18n.body)
+console.log(`\nGET /api/token-ledger/i18n -> ${i18n.status}, ${i18n.bytes} bytes`)
+for (const locale of Object.keys(dictionaries)) {
+  const keys = Object.keys(dictionaries[locale])
+  console.log(`  ${locale}: ${keys.length} keys, nav = ${JSON.stringify(dictionaries[locale].nav)}`)
+}
+const zhKeys = Object.keys(dictionaries.zh ?? {})
+const enKeys = Object.keys(dictionaries.en ?? {})
+console.log(`  the two languages share every key: ${zhKeys.length === enKeys.length && zhKeys.every((key) => enKeys.includes(key))}`)
+
+const i18nForeign = await get('/api/token-ledger/i18n', { headers: { origin: 'https://evil.example' } })
+console.log(`GET /api/token-ledger/i18n (foreign origin) -> ${i18nForeign.status} ${i18nForeign.body}`)
 
 server.close()
 rmSync(dir, { recursive: true, force: true })

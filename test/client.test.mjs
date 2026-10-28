@@ -303,22 +303,27 @@ function render(module, state, hooks = {}) {
 /**
  * Load a module and capture the component the registration passes to the slot.
  *
- * @returns {{ module: object, registered: object[], registeredLocale: object[], ctxEffects: object[], reactEffects: object[] }} the module plus what it registered.
+ * @returns {{ module: object, registered: object[], registeredLocale: object[], ctxEffects: object[], reactEffects: object[], dictionaries: Promise<void> }} the module plus what it registered.
  */
 function loadWithSection() {
   const module = loadClientModule()
   const registered = []
   const registeredLocale = []
   const ctxEffects = []
+  let dictionaries = null
+  const registeredPromise = new Promise((resolve) => {
+    dictionaries = resolve
+  })
   const ctx = {
     effect: (factory) => {
       ctxEffects.push(factory())
     },
     locale: {
-      register: (namespace, dictionaries) => {
-        registeredLocale.push({ namespace, dictionaries })
+      register: (namespace, entries) => {
+        registeredLocale.push({ namespace, dictionaries: entries })
         // The real service returns a disposer, and the component's effect hands
         // that disposer back to Cordis, so the stand-in must too.
+        dictionaries()
         return () => {}
       },
       bind: () => fakeT(),
@@ -333,13 +338,23 @@ function loadWithSection() {
       },
     },
   }
-  module.exports.apply(ctx)
+  // The dictionaries are data in `locale/*.json`, read over the plugin's own
+  // route: the browser half is one classic script and cannot carry them.
+  const realFetch = globalThis.fetch
+  const read = (name) => JSON.parse(readFileSync(fileURLToPath(new URL(`../locale/${name}.json`, import.meta.url)), 'utf8'))
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ zh: read('zh'), en: read('en') }) })
+  try {
+    module.exports.apply(ctx)
+  } finally {
+    globalThis.fetch = realFetch
+  }
   return {
     module: { ...module, __section: registered[0]?.component },
     registered,
     registeredLocale,
     ctxEffects,
     reactEffects: module.reactEffects,
+    dictionaries: registeredPromise,
   }
 }
 
@@ -388,6 +403,46 @@ test('a locale that cannot bind is treated as unavailable, not as fatal', () => 
   assert.equal(registered[0].label(), 'nav')
 })
 
+test('a dictionary that cannot be read leaves the section registered', async () => {
+  // The texts are cosmetic: without them the page still works and its labels
+  // fall back to the keys. A plugin that vanished because a word could not be
+  // read would be a worse failure than an unreadable label.
+  const module = loadClientModule()
+  const registered = []
+  const registeredLocale = []
+  const ctx = {
+    effect: (factory) => factory(),
+    locale: {
+      register: (namespace, dictionaries) => {
+        registeredLocale.push({ namespace, dictionaries })
+        return () => {}
+      },
+      bind: () => fakeT(),
+    },
+    slots: {
+      inject: (_name, callback) => callback(),
+      register: (options) => registered.push(options),
+    },
+  }
+  const realFetch = globalThis.fetch
+  const realWarn = console.warn
+  const warnings = []
+  console.warn = (...args) => warnings.push(args.map(String).join(' '))
+  globalThis.fetch = async () => {
+    throw new Error('the route is not there')
+  }
+  try {
+    module.exports.apply(ctx)
+    await new Promise((resolve) => setImmediate(resolve))
+  } finally {
+    globalThis.fetch = realFetch
+    console.warn = realWarn
+  }
+  assert.equal(registered.length, 1, 'the section is registered whatever the dictionaries do')
+  assert.equal(registeredLocale.length, 0, 'and no dictionary is registered out of a failed read')
+  assert.ok(warnings.some((line) => line.includes('could not read the dictionaries')), 'the failure is reported')
+})
+
 test('the module registers itself with the client loader under its package name', () => {
   const loaded = loadClientModule()
   assert.equal(loaded.id, '@zhz8888/dsh-token-ledger')
@@ -395,8 +450,8 @@ test('the module registers itself with the client loader under its package name'
   assert.deepEqual(loaded.exports.inject, ['slots', 'locale'])
 })
 
-test('apply registers a settings section with a label and dictionaries', () => {
-  const { registered, registeredLocale, ctxEffects } = loadWithSection()
+test('apply registers a settings section with a label and dictionaries', async () => {
+  const { registered, registeredLocale, ctxEffects, dictionaries } = loadWithSection()
   assert.equal(registered.length, 1)
   const { options } = registered[0]
   assert.equal(options.name, 'settings.section')
@@ -407,7 +462,11 @@ test('apply registers a settings section with a label and dictionaries', () => {
   assert.equal(options.locale, 'token-ledger')
   assert.equal(typeof options.inject, 'function')
 
+  // The dictionaries are read over the plugin's own route and registered when
+  // they arrive, so they are not there the moment `apply` returns.
+  await dictionaries
   assert.equal(registeredLocale.length, 1)
+  assert.equal(registeredLocale[0].namespace, 'token-ledger')
   assert.ok(registeredLocale[0].dictionaries.zh.nav.length > 0)
   assert.ok(registeredLocale[0].dictionaries.en.nav.length > 0)
   // Two effects: the stylesheet and the dictionaries, both with removers.

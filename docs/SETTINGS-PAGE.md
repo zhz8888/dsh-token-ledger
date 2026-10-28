@@ -177,15 +177,24 @@ period**, so this month by workspace can sit above today by model.
   partially delivered requests, and it does not know about a plan's included quota
   beyond what you tell it in the config.
 
-The page reads three loopback-only routes: `GET /api/token-ledger/summary` for the
-overview, `GET|POST /api/token-ledger/rates` for prices and the rate, and
-`GET /api/token-ledger/bill` for the bill. Expanding a vendor to all of its models
-reads the same rates route with the vendor named:
-`GET /api/token-ledger/rates?vendor=<vendor>`. The overview polls once a minute, prices
-and the bill only while their view is open. All three refuse a
-non-loopback peer, so they stay private even if the web server is bound to
-`0.0.0.0`. The write half additionally requires a JSON content type — a
-cross-origin form cannot send one — and caps the body at 256 KiB.
+The page reads four loopback-only routes: `GET /api/token-ledger/summary` for the
+overview, `GET|POST /api/token-ledger/rates` for prices and the rate,
+`GET /api/token-ledger/bill` for the bill, and `GET /api/token-ledger/i18n` for the
+page's own text. Expanding a vendor to all of its models reads the same rates
+route with the vendor named: `GET /api/token-ledger/rates?vendor=<vendor>`. The
+overview polls once a minute, prices and the bill only while their view is open.
+All four refuse a non-loopback peer, so they stay private even if the web server
+is bound to `0.0.0.0`. The write half additionally requires a JSON content type —
+a cross-origin form cannot send one — and caps the body at 256 KiB.
+
+**The texts are data, not code.** The Chinese and English entries live in
+`locale/zh.json` and `locale/en.json`; the host reads them and serves them over
+the route above, and the browser hands them to the locale service. The two
+languages carry the same key set — a key missing from one of them means a reader
+gets a word in one language and the key itself in the other — and a test says so.
+The browser half is one classic script and cannot carry files of its own, so this
+is how the words reach it; when they cannot be read the section still appears and
+its labels fall back to the keys.
 
 It needs a profile with a web server (the `web` or `desktop` profile). Without one,
 `/tokens` and the CLI still work, and the section says so instead of failing. Note

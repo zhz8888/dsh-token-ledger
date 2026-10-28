@@ -60,10 +60,16 @@ function loadApply() {
 /**
  * Run `apply` against a stand-in context and return what it registered.
  *
- * @returns {{ options: object, component: unknown, injected: unknown, effects: number, locale: string|undefined }} the captured registration.
+ * @returns {{ options: object, component: unknown, injected: unknown, effects: number, locale: string|undefined, registered: Promise<void> }} the captured registration, and a promise that settles when the dictionaries have been registered.
  */
 function captureRegistration() {
   const captured = { effects: 0, locale: undefined, disposers: [] }
+  // The dictionaries are read over the plugin's own route, so registering them
+  // is a round trip: the promise settles when it has happened.
+  let registered = null
+  captured.registered = new Promise((resolve) => {
+    registered = resolve
+  })
   const ctx = {
     // Cordis runs the factory to obtain the disposer, so the stand-in must too:
     // registering the dictionaries happens inside it, not at the call site.
@@ -74,6 +80,7 @@ function captureRegistration() {
     locale: {
       register: (namespace) => {
         captured.locale = namespace
+        registered()
         return () => {}
       },
       bind: () => (key) => key,
@@ -90,7 +97,17 @@ function captureRegistration() {
       },
     },
   }
-  loadApply()(ctx)
+  const realFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ zh: { nav: '用量账本' }, en: { nav: 'Token ledger' } }),
+  })
+  try {
+    loadApply()(ctx)
+  } finally {
+    globalThis.fetch = realFetch
+  }
   return captured
 }
 
@@ -175,11 +192,14 @@ test('the plugin declares the id the list protocol requires', () => {
   assert.match(options.id, /^[a-z][a-z0-9-]*$/)
 })
 
-test('the inject callback supplies the translator the component reads', () => {
+test('the inject callback supplies the translator the component reads', async () => {
   const captured = captureRegistration()
   assert.equal(typeof captured.injected.t, 'function')
   // The component destructures `t` and calls it with dictionary keys.
   assert.equal(typeof captured.injected.t('nav'), 'string')
+  // The dictionaries are read over the plugin's own route and registered when
+  // they arrive, under the namespace the registration names.
+  await captured.registered
   assert.equal(captured.locale, 'token-ledger', 'the dictionaries are registered under the namespace the registration names')
   // Both effects returned a disposer, so a stopped plugin leaves nothing behind.
   assert.equal(captured.effects, 2)

@@ -201,6 +201,10 @@ follow the host's language.
 [The settings page in full](docs/SETTINGS-PAGE.md) — what each view shows, and
 where every price on it came from.
 
+The page's own Chinese and English texts live in `locale/zh.json` and
+`locale/en.json` as plain data: edit one and reload the page — no host restart —
+and the two languages carry the same key set.
+
 ## How the numbers are counted
 
 | Rule | Behaviour |

@@ -6,6 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The page's translations moved out of the browser half into `locale/zh.json` and
+  `locale/en.json`.** They were two objects inside `lib/client.js` — 185 keys a
+  language, written as code in a file that is otherwise code — and their key set
+  could only be compared with the other language's by parsing that file.
+
+  The texts are data now. The host reads them and serves them over a new
+  loopback route (`GET /api/token-ledger/i18n`); the browser half reads them
+  once and hands them to the locale service, which accepts a dictionary that
+  arrives after the page has been rendered. **One key set for two languages**: a
+  key missing from one of them means a reader gets a word in one language and the
+  key itself in the other, and a test says so.
+
+  Nothing about the page changes. The files are read when they are asked for,
+  so a wording fix takes effect on the next page load and needs no restart, and
+  when they cannot be read at all the section still appears with its labels
+  falling back to the keys — a plugin must not vanish because a word was missing.
+
 ### Added
 
 - **Every provider on the Rates page can be expanded to all of its models.** The table

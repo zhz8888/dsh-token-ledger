@@ -1090,6 +1090,40 @@ Three things are pinned here:
 
 The cache keeps the whole list, so an offline host expands a vendor just as well.
 
+## The texts as files, 2026-10-28 — one key set for two languages
+
+The Chinese and English entries used to be two objects inside the browser half,
+185 keys each. This section records **how it was checked** and **what came back**.
+
+The host half was driven with a stub transport (no network), the route is the
+plugin's own, and the requests went to a real `node:http` server:
+
+```
+GET /api/token-ledger/i18n -> 200, 12172 bytes
+  zh: 185 keys, nav = "用量账本"
+  en: 185 keys, nav = "Token ledger"
+  the two languages share every key: true
+GET /api/token-ledger/i18n (foreign origin) -> 403 {"error":"forbidden"}
+```
+
+Two things are pinned here:
+
+- **One key set for both languages.** The line
+  (`the two languages share every key: true`) compares the keys one by one
+  rather than checking that the files are there. A key missing from one of them
+  means a reader gets a word in one language and the key itself in the other,
+  which looks like an omission and reads like a mistake.
+- **The dictionaries are read when they are asked for**, so a wording fix needs
+  no restart: the route reads the files per request rather than once at
+  startup. The browser half hands them to the locale service, which accepts a
+  dictionary that arrives late — the outlets that are already on screen draw
+  again.
+
+The browser half now carries no texts of its own: it is **one classic script**
+and cannot hold files, which is what decides that the host has to send the
+words over. When they cannot be read the section still appears and its labels
+fall back to the keys — a plugin must not vanish because a word was missing.
+
 ## Not verified
 
 Stated plainly, because a verification file that only lists successes is not

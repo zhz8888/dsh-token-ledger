@@ -13,9 +13,11 @@ import { test } from 'node:test'
 
 import {
   BILL_PATH,
+  I18N_PATH,
   OVERVIEW_PATH,
   RATES_PATH,
   createBillRoute,
+  createI18nRoute,
   createOverviewRoute,
   createRatesRoute,
   isAllowedPeer,
@@ -569,6 +571,54 @@ test('a faulting rates service becomes a 500 with a JSON body', async () => {
   assert.equal(writeRes.status, 500)
   assert.equal(JSON.parse(writeRes.body).error, 'could not save')
   assert.equal(writeErrors.length, 1)
+})
+
+/* ------------------------------------------------------------------ i18n -- */
+
+test('the dictionaries are served as JSON on their own path', async () => {
+  const route = createI18nRoute({ read: () => ({ zh: { nav: '用量账本' }, en: { nav: 'Token ledger' } }) })
+  const res = await callAsync(route, makeReq({ url: I18N_PATH }))
+  assert.equal(res.status, 200)
+  assert.match(res.headers['content-type'], /application\/json/)
+  assert.equal(res.headers['cache-control'], 'no-store')
+  // Both languages at once: the browser registers them and the locale service
+  // picks the one the host is set to.
+  assert.deepEqual(JSON.parse(res.body), { zh: { nav: '用量账本' }, en: { nav: 'Token ledger' } })
+})
+
+test('a language the catalogue does not carry is simply absent', async () => {
+  // The browser falls back to the keys for a language that is not there, which
+  // is unreadable but not missing.
+  const route = createI18nRoute({ read: () => ({ zh: { nav: '用量账本' } }) })
+  const res = await callAsync(route, makeReq({ url: I18N_PATH }))
+  assert.equal(res.status, 200)
+  assert.deepEqual(Object.keys(JSON.parse(res.body)), ['zh'])
+})
+
+test('the dictionaries are refused from off the machine and from another origin', async () => {
+  const route = createI18nRoute({ read: () => ({ zh: {}, en: {} }) })
+  const remote = await callAsync(route, makeReq({ address: '192.168.1.20', url: I18N_PATH }))
+  assert.equal(remote.status, 403)
+  const foreign = await callAsync(route, makeReq({ origin: 'https://evil.example', url: I18N_PATH }))
+  assert.equal(foreign.status, 403)
+  assert.equal(JSON.parse(foreign.body).error, 'forbidden')
+})
+
+test('writing to the dictionaries route is refused', async () => {
+  const route = createI18nRoute({ read: () => ({ zh: {}, en: {} }) })
+  const res = await callAsync(route, makeReq({ method: 'POST', url: I18N_PATH }))
+  assert.equal(res.status, 405)
+})
+
+test('the dictionaries are read per request, so a wording fix needs no restart', async () => {
+  let text = { zh: { nav: '用量账本' } }
+  const route = createI18nRoute({ read: () => text })
+  const first = await callAsync(route, makeReq({ url: I18N_PATH }))
+  assert.equal(JSON.parse(first.body).zh.nav, '用量账本')
+  // The files are read when they are asked for, not once at startup.
+  text = { zh: { nav: '用量帐本' } }
+  const second = await callAsync(route, makeReq({ url: I18N_PATH }))
+  assert.equal(JSON.parse(second.body).zh.nav, '用量帐本')
 })
 
 /* ------------------------------------------------------------------- bill -- */

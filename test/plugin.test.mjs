@@ -363,7 +363,7 @@ test('a fork carrying its boundary marker is cut after it', async () => {
   }
 })
 
-test('all three settings page routes are registered and logged when a web server exists', async () => {
+test('all the settings page routes are registered and logged when a web server exists', async () => {
   const routes = []
   const disposed = []
   const mounted = await mount({
@@ -377,13 +377,14 @@ test('all three settings page routes are registered and logged when a web server
     },
   })
   try {
-    assert.equal(routes.length, 3, 'the overview, the rates route and the bill route')
+    assert.equal(routes.length, 4, 'the overview, the rates route, the bill route and the dictionaries')
     assert.deepEqual(
       routes.map((route) => [route.kind, route.path]),
       [
         ['exact', '/api/token-ledger/summary'],
         ['exact', '/api/token-ledger/rates'],
         ['exact', '/api/token-ledger/bill'],
+        ['exact', '/api/token-ledger/i18n'],
       ],
     )
     for (const route of routes) assert.equal(typeof route.handler, 'function')
@@ -395,10 +396,11 @@ test('all three settings page routes are registered and logged when a web server
       ),
       JSON.stringify(mounted.harness.logs),
     )
-    // Disposing the plugin must hand all three routes back.
+    // Disposing the plugin must hand all four routes back.
     await mounted.harness.dispose()
     assert.deepEqual(disposed.sort(), [
       '/api/token-ledger/bill',
+      '/api/token-ledger/i18n',
       '/api/token-ledger/rates',
       '/api/token-ledger/summary',
     ])

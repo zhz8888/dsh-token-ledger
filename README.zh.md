@@ -192,6 +192,9 @@ dsh-token-ledger help    [选项]       打印用法说明
 
 [设置页完整说明](docs/SETTINGS-PAGE.zh.md)——每个页签展示什么，以及页面上的每个价格分别来自哪里。
 
+页面自己的中英文文案在 `locale/zh.json` 与 `locale/en.json`，是纯数据：改完刷新页面
+即可，不必重启宿主。两种语言共用同一套键。
+
 ## 计数规则
 
 | 规则 | 行为 |
