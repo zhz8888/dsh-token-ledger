@@ -8,6 +8,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Both READMEs now read like a public repository's.** A table of contents, a quick start,
+  a requirements table, a troubleshooting section, and the contributing, security, support and
+  acknowledgements sections a public project is expected to have — the same section set in
+  both languages, with the anchors to match. The technical content is unchanged; what moved
+  is the order and the framing, so that the DSH version, the install command and the issue
+  tracker are reachable in the first screen instead of the fortieth line.
+
+  Two things were corrected in passing. The English README quoted the settings page's
+  **Chinese** labels, while an English-locale host shows `Est. cost`, `Cost`, `Cache read`,
+  `Uncached input`, `priced from`, `{n} other low-cost sessions`, `summed` and
+  `of which plan` — the page registers both dictionaries with the host's locale service.
+  And the release example tagged `v1.0.0`, a version that has been on the registry since
+  1.0, which now uses the current version and says that the tag has to match the manifest.
+
 - **The package manager is pnpm.** `package-lock.json` is gone, `pnpm-lock.yaml` replaces it,
   and `package.json` carries `packageManager: pnpm@11.20.0` so the version is declared once
   and the workflows read it from there. This is the package manager the DSH ecosystem already

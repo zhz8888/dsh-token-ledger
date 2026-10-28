@@ -5,8 +5,37 @@
 [![CI](https://github.com/chenmiao8563/dsh-token-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/chenmiao8563/dsh-token-ledger/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@chenmiao8563/dsh-token-ledger.svg)](https://www.npmjs.com/package/@chenmiao8563/dsh-token-ledger)
 [![license](https://img.shields.io/npm/l/@chenmiao8563/dsh-token-ledger.svg)](./LICENSE)
+[![DSH](https://img.shields.io/badge/DSH-%5E0.2.0--rc.1-4c1a97)](https://github.com/deepseek-ai/deepseek-harness)
+[![last commit](https://img.shields.io/github/last-commit/chenmiao8563/dsh-token-ledger)](https://github.com/chenmiao8563/dsh-token-ledger/commits/main)
 
 [English](README.md) | 中文
+
+---
+
+## 目录
+
+- [这是什么](#这是什么)
+- [快速上手](#快速上手)
+- [需要什么](#需要什么)
+- [界面截图](#界面截图)
+- [为什么别的插件装不上时它能装上](#为什么别的插件装不上时它能装上)
+- [安装](#安装)
+- [计数规则](#计数规则)
+- [命令行](#命令行)
+- [设置页](#设置页) — [概览](#概览) · [费率](#费率) · [账单](#账单)
+- [配置](#配置)
+- [它刻意不做的事](#它刻意不做的事)
+- [权限](#权限)
+- [兼容性](#兼容性)
+- [排查](#排查)
+- [卸载](#卸载)
+- [开发](#开发)
+- [参与贡献](#参与贡献)
+- [安全](#安全)
+- [支持](#支持)
+- [致谢](#致谢)
+- [发布](#发布)
+- [许可证](#许可证)
 
 ---
 
@@ -29,9 +58,83 @@ scanned 139 session log(s), 344203 events, 29 forked session(s), 0 unreadable
 
 从 0.5 起，设置页有三个页签：**概览**（账本本身，含每档区间的预计花费）、**费率**（各厂商
 最新模型的价格表与实时美元汇率）、**账单**（把同一批用量折算成钱——按工作区 / 会话 / 模型 /
-供应商四个分组自上而下展开，可整页导出 CSV 或 JSON）。账单页会写明价格来源、汇率，
-以及每一个没能套上价格的模型，所以这个数字是可以核对的；概览页只数 Token，
+供应商四个分组自上而下展开，每个分组各配五个时间段，可整页导出 CSV 或 JSON）。账单页会写明
+价格来源、汇率，以及每一个没能套上价格的模型，所以这个数字是可以核对的；概览页只数 Token，
 费用是拿账单那套算法算出来的估算值。详见[设置页](#设置页)。
+
+## 快速上手
+
+```bash
+# 1. 把插件装进某个 profile
+dsh plugin --profile web add @chenmiao8563/dsh-token-ledger
+
+# 2. 重启 DSH，然后确认那一行进去了
+dsh --profile web --dump-config | grep token-ledger
+
+# 3. 在对话里问账本
+/tokens
+```
+
+或者完全不启动宿主——CLI 自己直接读原始日志：
+
+```bash
+dsh-token-ledger summary   # 已存的账本
+dsh-token-ledger audit     # 从原始日志重算并对比
+```
+
+账本写在 `<DSH_HOME>/token-ledger/ledger.json`，全新安装会先把磁盘上已有的历史折叠进来，
+而不是从今天开始记。它需要 DSH `^0.2.0-rc.1`（实测针对 `0.2.1-rc.3`）与 Node ≥ 22.15.0，
+其余条件都是可选的。
+
+## 需要什么
+
+| | 要求 | 说明 |
+| --- | --- | --- |
+| **DSH** | `^0.2.0-rc.1` | 实测针对 `0.2.1-rc.3`。这一条是有约束力的：DSH 会跳过区间不覆盖当前宿主的插件。详见[需要的 DSH 版本](#需要的-dsh-版本)。 |
+| **Node** | ≥ 22.15.0 | CLI 需要解码 Zstandard 帧。宿主端本身没有版本相关要求。 |
+| **Profile** | 任意 | 设置页需要带 web 服务器的 profile（`web` 或 `desktop`）；`/tokens` 与 CLI 在任何 profile 下都可用。 |
+| **网络** | 可选 | 只有价目表与美元汇率需要联网。`rates: false` 会去掉全部请求。 |
+| **磁盘** | 一个可写的 `<DSH_HOME>/token-ledger/` | 除了你主动要求的导出，它只写这一个目录。 |
+
+### 需要的 DSH 版本
+
+**DSH `^0.2.0-rc.1`** —— 当前实测针对的是 0.2.1-rc.3；区间下界写成 `0.2.0-rc.1`，
+是因为这个生态用 rc 段来拼预发布版本区间。`^` 把上界放在 `0.3.0`。
+
+这个区间是有实际约束力的，不是装饰：DSH 在启动时会拿它与正在运行的宿主比对，
+**区间不覆盖当前版本就直接跳过该插件**。1.0.0 带的 `^0.1.2-rc.1` 不满足 `0.2.0-rc.2`，
+于是 1.0.0 在所有 0.2 宿主上被静默跳过——1.0.1 修的就是这件事。`0.1.x` 宿主现在落在
+声明区间之外。
+
+同一个区间也写成 `engines.dsh`——这是插件市场的兼容性预检会读取并展示的字段：`dshmarket`
+用它与宿主 peers 一起推导结论，并展示所有声明的**交集**。两处写的是同一个字符串，所以市场
+上显示的是一个区间、而不是同一件事的两种写法的交集；也不会在没人同时改两处的情况下各自漂移。
+
+这个要求按生态里真正会被读取的方式声明——写成对两半各自绑定到的五个宿主包的
+`peerDependencies`：
+
+| Peer | 为什么要写它 |
+| --- | --- |
+| `@deepseek-ai/dsh-session-persistence` | 它提供 `sessionPersistence`，账本的用量数据来自这里。 |
+| `@deepseek-ai/dsh-commands` | 它提供 `commands`，`/tokens` 靠它注册。 |
+| `@deepseek-ai/dsh-host-webserver` | 它提供 `webServer`，设置页那三个路由靠它提供。 |
+| `@deepseek-ai/dsh-client-locale` | 浏览器半边注入它来拿翻译后的文案。 |
+| `@deepseek-ai/dsh-client-ui-settings-general` | 浏览器半边注入它，把分区加进设置侧边栏。 |
+
+五个都是**可选**（optional），这是刻意的而不是含糊其辞：DSH 不会把宿主包提升进 profile 的
+`node_modules`，所以写成必需 peer 只会在每次安装时报告一个"未满足"、却什么也不说明。可选也正是
+插件自身行为的如实描述——没有 web 服务器的 profile 少掉设置页，`/tokens` 与 CLI 照常可用；
+headless 或 TUI profile 则根本没有那两个客户端包。
+
+这个声明之所以有用，是因为 DSH 会拿**实际在跑的那套安装**去解析它：profile 检查器先看插件自己的
+`node_modules`，再看 profile 目录树，最后**回落到 DSH 安装目录本身**
+（`node_modules/dshmarket/lib/check.js`），把解析到的版本与上面的区间比对——于是不受支持的
+harness 会被报出来，而不是悄悄挂载。早先的版本声明的是 `dsh.compatibility.dsh`，而 DSH 里
+没有任何代码读它；1.0 把它删掉，而不是留一个看起来像承诺、实际不是的字段。取而代之的
+`dsh.compatibility.dshReleases` 是一份给插件市场读的声明——它列出真正核对过的版本——
+而 DSH 在挂载时看的并不是它，真正的闸门是上面那个 peer 区间。
+
+这些声明对消费者零成本：可选 peer 不会被安装，包本身依旧没有运行时依赖、没有安装脚本。
 
 ## 界面截图
 
@@ -98,44 +201,6 @@ dsh --profile web --dump-config | grep token-ledger
 
 账本写在 `<DSH_HOME>/token-ledger/ledger.json`。
 
-### 需要的 DSH 版本
-
-**DSH `^0.2.0-rc.1`** —— 当前实测针对的是 0.2.1-rc.3；区间下界写成 `0.2.0-rc.1`，
-是因为这个生态用 rc 段来拼预发布版本区间。`^` 把上界放在 `0.3.0`。
-
-这个区间是有实际约束力的，不是装饰：DSH 在启动时会拿它与正在运行的宿主比对，
-**区间不覆盖当前版本就直接跳过该插件**。1.0.0 带的 `^0.1.2-rc.1` 不满足 `0.2.0-rc.2`，
-于是 1.0.0 在所有 0.2 宿主上被静默跳过——1.0.1 修的就是这件事。`0.1.x` 宿主现在落在
-声明区间之外。
-
-同一个区间也写成 `engines.dsh`——这是插件市场的兼容性预检会读取并展示的字段：`dshmarket`
-用它与宿主 peers 一起推导结论，并展示所有声明的**交集**。两处写的是同一个字符串，所以市场
-上显示的是一个区间、而不是同一件事的两种写法的交集；也不会在没人同时改两处的情况下各自漂移。
-
-这个要求按生态里真正会被读取的方式声明——写成对两半各自绑定到的五个宿主包的
-`peerDependencies`：
-
-| Peer | 为什么要写它 |
-| --- | --- |
-| `@deepseek-ai/dsh-session-persistence` | 它提供 `sessionPersistence`，账本的用量数据来自这里。 |
-| `@deepseek-ai/dsh-commands` | 它提供 `commands`，`/tokens` 靠它注册。 |
-| `@deepseek-ai/dsh-host-webserver` | 它提供 `webServer`，设置页那三个路由靠它提供。 |
-| `@deepseek-ai/dsh-client-locale` | 浏览器半边注入它来拿翻译后的文案。 |
-| `@deepseek-ai/dsh-client-ui-settings-general` | 浏览器半边注入它，把分区加进设置侧边栏。 |
-
-五个都是**可选**（optional），这是刻意的而不是含糊其辞：DSH 不会把宿主包提升进 profile 的
-`node_modules`，所以写成必需 peer 只会在每次安装时报告一个"未满足"、却什么也不说明。可选也正是
-插件自身行为的如实描述——没有 web 服务器的 profile 少掉设置页，`/tokens` 与 CLI 照常可用；
-headless 或 TUI profile 则根本没有那两个客户端包。
-
-这个声明之所以有用，是因为 DSH 会拿**实际在跑的那套安装**去解析它：profile 检查器先看插件自己的
-`node_modules`，再看 profile 目录树，最后**回落到 DSH 安装目录本身**
-（`node_modules/dshmarket/lib/check.js`），把解析到的版本与上面的区间比对——于是不受支持的
-harness 会被报出来，而不是悄悄挂载。早先的版本声明的是 `dsh.compatibility.dsh`，而 DSH 里
-没有任何代码读它；1.0 把它删掉，而不是留一个看起来像承诺、实际不是的字段。
-
-这些声明对消费者零成本：可选 peer 不会被安装，包本身依旧没有运行时依赖、没有安装脚本。
-
 ## 计数规则
 
 只有知道它到底在数什么，这些数字才有用。
@@ -173,6 +238,7 @@ dsh-token-ledger [summary] [选项]     打印已存账本（默认）
 dsh-token-ledger audit   [选项]       从原始日志重算并对比
 dsh-token-ledger rebuild [选项]       从原始日志重算
 dsh-token-ledger export  [选项]       导出 CSV 与 JSON
+dsh-token-ledger help    [选项]       打印用法说明
 
 --home <path>    DSH home（默认读 DSH_HOME 环境变量，其次 ~/.dsh）
 --ledger <path>  要读写的账本文件
@@ -182,6 +248,8 @@ dsh-token-ledger export  [选项]       导出 CSV 与 JSON
 --write          配合 rebuild：覆盖已存账本
 --json           机器可读输出
 --quiet          抑制人类可读摘要，只保留退出码
+-h, --help       打印用法说明
+-v, --version    打印版本号
 ```
 
 退出码：`0` 成功或审计通过，`1` 审计发现真实差异，`2` 用法错误或输入不可读。
@@ -204,6 +272,7 @@ dsh-token-ledger export  [选项]       导出 CSV 与 JSON
 ## 设置页
 
 浏览器端会在设置侧边栏注册一个 **用量账本** 分区，顶部有 **概览 / 费率 / 账单** 三个按钮。
+它自己的文案会注册到宿主的语言服务上，因此跟随宿主的语言。
 
 ### 概览
 
@@ -406,9 +475,9 @@ false` 关闭启动时的磁盘折叠；`backfill: false` 则两个都关，账�
 | **网络** | 只在费率功能开启时（默认开启）发起普通 HTTPS `GET`：价格目录（`models.dev`，若选择该来源则为 `openrouter`）、美元汇率，以及最多 3 个目录未自行定价的厂商定价页。`rates: false` 会去掉全部请求，只保留手动填写的价格。抓取失败时保留上次已存结果，绝不清空。浏览器半边不发起任何外部请求：它那 4 处 `fetch` 都是同源请求，打向本插件自己的 `/api/token-ledger/*` 路由。 |
 | **命令** | 没有 shell、没有子进程、没有 spawn：运行时代码不 import `child_process`，也不调用 `exec`、`spawn` 或 `fork`——安装时与运行时都没有。它对外提供的是通过宿主自身 `commands` 服务注册的 `/tokens` 斜杠命令，以及你自己运行的 `dsh-token-ledger` 可执行文件。 |
 | **凭据** | 不读取任何凭据。`process.env` 只在未显式传入 home 时用来解析 `DSH_HOME`；不读任何提供方 API key、不读 `.credentials.yaml`、不碰 keychain、不做 OAuth。你的任何信息都不会离开这台机器：唯一的对外请求就是上面那些价格地址，只带 `accept` 与 user-agent，别无其他。 |
-| **安装** | 没有 `preinstall`、`install`、`postinstall` 或 `prepare` 脚本；无运行时依赖；无原生二进制；无符号链接与子模块；不禁用、不替换、不重复安装任何 `@deepseek-ai/*` 官方组件。 |
+| **安装** | 没有 `preinstall`、`install`、`postinstall` 或 `prepare` 脚本；无运行时依赖；无原生二进制；无符号链接与子模块；不禁用、不替换、不重复安装任何 `@deepseek-ai/*` 官方组件。清单里唯一的生命周期脚本是 `prepublishOnly`，它在**本包自己发布时**跑打包检查——消费者的安装过程永远不会执行它。 |
 
-以上每一条都可以对着固定 Commit 核对——import、URL 与状态目录都在 `lib/` 里，
+以上每一条都可以对着源码核对——import、URL 与状态目录都在 `lib/` 里，
 而保证"安装侧"成立的那些打包不变式由 `pnpm run verify` 断言。
 
 ## 兼容性
@@ -424,6 +493,46 @@ false` 关闭启动时的磁盘折叠；`backfill: false` 则两个都关，账�
 - **Profile：** 任意。没有 profile 相关代码。
 - **网络：** 费率页会通过 HTTPS 取价格与美元汇率，但这完全是可选的：没有外网时仍然
   提供本机缓存的上次结果，手动填写的值照常可用，`rates: false` 则连请求都省掉。
+
+## 排查
+
+**插件根本没挂载。**
+DSH 会跳过区间不覆盖当前宿主的插件，而且只在宿主自己的日志里说明，不会明显报错。
+先拿自己的宿主版本对一下区间：这里是 `^0.2.0-rc.1`，`0.1.x` 宿主装不上。见
+[需要的 DSH 版本](#需要的-dsh-版本)。
+
+**账本是空的。**
+全新安装本该显示磁盘上已有的历史，所以空账本通常是两种原因：磁盘折叠被关了，
+或者日志不在插件要找的位置。CLI 读的是和宿主同一批文件，可以从它这一侧核对：
+
+```bash
+dsh-token-ledger rebuild --home ~/.dsh --write
+dsh-token-ledger audit --home ~/.dsh
+```
+
+`backfillLogs: false` 关掉磁盘折叠，`backfill: false` 两个都关，账本就从头开始。
+日志在 `<DSH_HOME>/sessions/<项目>/<会话>/session.jsonl.zstd`。
+
+**审计报 "mismatch"。**
+它会区分"会话还在跑、只是还没落盘"与真正的分歧，只有后者算失败。判定规则与退出码见
+[审计能区分两类差异](#审计能区分两类差异)。
+
+**费用显示短横线，或者页面写着"还没有价格"。**
+本包不内置价目表——内置一份几周内就会过期。价格要么从一个你选定的源联网取，
+要么在费率页上手填；宿主还没拿到价格时会明说，而不是给出一个理直气壮的 `¥0.00`。
+完全离线的宿主仍会提供上次已取回的结果，并显示它有多旧。
+
+**`/tokens` 没有注册。**
+这个命令通过宿主自身的 `commands` 服务注册，而本包把它声明为可选 peer。
+没有该服务的 profile 根本没有斜杠命令；CLI 不受影响，照样能读账本。
+
+**数字和厂商后台对不上。**
+账单是估算值：会话日志记下的 Token × 路由真正指向的那个模型的公开价目。
+它不是发票，也不掌握厂商的折扣、额度、套餐与失败重试的情况。
+它没算进去的部分列在[它刻意不做的事](#它刻意不做的事)里。
+
+**想从头来过。**
+删掉 `<DSH_HOME>/token-ledger/` 再重启；下次启动会重新折叠磁盘上的历史。
 
 ## 卸载
 
@@ -464,13 +573,66 @@ DOM 属性，React 会报出来，而手写的 `createElement` 会默默接受�
 实际验证了什么、怎么验证的（包括 fork 规则背后的证据）见
 [docs/VERIFICATION.md](docs/VERIFICATION.md)。
 
+## 参与贡献
+
+欢迎提 issue 与 pull request。
+
+```bash
+git clone https://github.com/chenmiao8563/dsh-token-ledger
+cd dsh-token-ledger
+pnpm install
+pnpm test          # 297 个测试，14 个文件
+pnpm run verify    # 打包不变式
+```
+
+两道门禁都通过、且 diff 里没有夹带无关改动，就算可以了。本仓库有两条约定：
+
+- **README 是这个包契约的一部分。** 权限表、计数规则与兼容性区间都是可以对着源码核对的
+  说法——权限表对着 `lib/`，打包不变式对着 `scripts/verify-package.mjs`。
+  改动其中任何一条，文档要跟着一起改。
+- **写清楚你量到了什么。** `docs/VERIFICATION.md` 记录了验证了什么、在什么环境上验证、
+  以及哪些没有验证。新的说法要么带着证据进那个文件，要么就不要进来。
+
+改 `lib/index.js` 或 `lib/client.js` 需要重启 DSH 才生效——原因见[开发](#开发)。
+
+## 安全
+
+这个插件会读会话日志、读 `settings.yaml` 里账单要显示的供应商名，并且只写
+`<DSH_HOME>/token-ledger/` 目录。它不读取任何凭据。它到底碰了哪些东西，逐条列在
+[权限](#权限)里，可以对着源码核对，不必只听它说。
+
+**报告安全问题请不要开公开 issue。** 用本仓库 **Security** 标签页里的私有报告
+（*Report a vulnerability*）通道，它能在不公开细节的情况下联系到维护者；
+如果你的账号看不到这个选项，直接用 `package.json` 里的邮箱联系维护者。
+
+## 支持
+
+- **缺陷与需求** — [GitHub issues](https://github.com/chenmiao8563/dsh-token-ledger/issues)。
+- **每个版本改了什么** — [CHANGELOG.md](CHANGELOG.md)。
+- **实际验证了什么、哪些没验证** — [docs/VERIFICATION.md](docs/VERIFICATION.md)。
+
+带上 DSH 版本、profile 类型，以及 `dsh-token-ledger audit` 的输出（它会打印自己扫了什么），
+通常一个来回就能定位。
+
+## 致谢
+
+- 它绑定的槽位注册表、语言服务与设置外壳都来自
+  [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)。
+- 厂商标识是各家官方的那一套，取自它们自己的官网与
+  [Simple Icons](https://simpleicons.org)，商标权仍属各自权利人。
+- 不公布机器可读价格的那些厂商，其价目来自 [models.dev](https://models.dev)；
+  DeepSeek、Z.ai 与腾讯的价格则当场读自它们自己的定价页。
+
 ## 发布
 
 **打一个 tag 就是发布。不需要在任何地方存放 token。**
 
 ```bash
-git tag v1.0.0 && git push origin v1.0.0
+git tag v1.1.2 && git push origin v1.1.2
 ```
+
+tag 必须与 `package.json` 里的版本一致——workflow 不一致就拒绝发布——所以请用清单里
+那个版本，而不是照抄这个例子。
 
 `release.yml` 会跑测试与打包检查、确认 tag 与 `package.json` 一致、用 OIDC
 **trusted publishing** 发布、把 tarball 挂到 GitHub Release 上，并在报告成功之前
@@ -505,4 +667,8 @@ token 开始。优先用打 tag。
 
 ## 许可证
 
-MIT
+MIT —— 见 [LICENSE](LICENSE)。
+
+代码采用 MIT 许可证。包内附带的厂商标识（OpenAI、Anthropic、Google、DeepSeek、Qwen、
+xAI、Z.ai、Kimi、MiniMax、腾讯、小米、字节跳动）属于各自权利人的商标，仅用于标识
+这一行价格属于谁，不在本许可证覆盖范围内。
