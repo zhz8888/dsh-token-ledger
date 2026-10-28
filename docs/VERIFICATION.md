@@ -428,7 +428,7 @@ from a third-party plugin:
 | What `dsh.client.inject` **contains** | the five `dsh.client` declarations DSH ships, two of them non-empty: `dsh-client-locale` and `dsh-client-ui-settings-general` | **package/entry ids, not service names.** A module's own exported `inject` is the separate service list. This plugin lists the two packages whose services it uses, which is the same convention, and an empty list is also legal (`dsh-client-connection` uses one) |
 | What `external` contains | the module-graph walk in `dsh-client-modules/lib/client.js`, which runs every entry through `stripClientSuffix` before resolving it | module specifiers for *other rows*. This plugin requires only `react`, which the loader provides and no row owns, so it declares none |
 | How `exports["./client"]` is located | `clientExportOf` in `dsh-client-modules/lib/index.js` | a plain string or an object with a string `default`; anything else throws. A plain string is used here, and `verify-package.mjs` pins it |
-| Whether a **scoped** package id survives | `stripClientSuffix` in `dsh-client-modules/lib/client.js` | it removes only a trailing `/client`, so `@chenmiao8563/dsh-token-ledger` passes through intact. DSH's own client packages are scoped too, so the transport already carries ids containing `/` |
+| Whether a **scoped** package id survives | `stripClientSuffix` in `dsh-client-modules/lib/client.js` | it removes only a trailing `/client`, so `@zhz8888/dsh-token-ledger` passes through intact. DSH's own client packages are scoped too, so the transport already carries ids containing `/` |
 
 That reading corrected two real mistakes in the first draft of this half, both of
 which would have been a silent failure rather than an error:
@@ -1010,6 +1010,36 @@ produces a ledger — not that every view was looked at again.
 **Not verified this round:** the GitHub Actions workflows. `pnpm/action-setup@v6`, the
 frozen install, and the two workflow files are written, but nothing here has executed them
 on a runner; the first CI run on a push is what will actually tell.
+
+## The rename, 2026-10-28 — the package moved to @zhz8888
+
+The package was published as `@chenmiao8563/dsh-token-ledger` and is now
+`@zhz8888/dsh-token-ledger`; the repository moved with it. The captures above still
+show the old name, because they are what the commands printed at the time and
+rewriting them would make the record claim something that never happened.
+
+What moved with the name, because the client half registers under its package name
+and the composition row is resolved by it:
+
+| What | Was | Now |
+| --- | --- | --- |
+| `package.json` `name` | `@chenmiao8563/dsh-token-ledger` | `@zhz8888/dsh-token-ledger` |
+| The client module id (`lib/client.js`) | `@chenmiao8563/dsh-token-ledger` | `@zhz8888/dsh-token-ledger` |
+| The composition row (`cordis.patch.yml`) | `@chenmiao8563/dsh-token-ledger` | `@zhz8888/dsh-token-ledger` |
+
+Two things deliberately did not move: the plugin's Cordis entry id stays
+`token-ledger`, which is what a profile-level override targets, and the CLI command
+stays `dsh-token-ledger`.
+
+The MIT copyright is retained and extended rather than replaced — the upstream notice
+stays because MIT requires it, and the fork's holder is added beside it. See
+[LICENSE](../LICENSE).
+
+**Not verified this round:** the renamed package has not been published or installed
+from the registry. The plugin in the profile on this machine is still the previously
+published `@chenmiao8563/dsh-token-ledger@1.1.2`; installing the renamed package is
+a separate step, and it needs the `@zhz8888` scope to exist on npm with a Trusted
+Publisher configured for this repository.
 
 ## Not verified
 

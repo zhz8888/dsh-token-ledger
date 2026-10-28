@@ -96,12 +96,12 @@ jobs:
         id: published
         run: |
           set -eu
-          if npm view "@chenmiao8563/dsh-token-ledger@${{ steps.version.outputs.value }}" version >/dev/null 2>&1; then
+          if npm view "@zhz8888/dsh-token-ledger@${{ steps.version.outputs.value }}" version >/dev/null 2>&1; then
             echo "value=true" >> "$GITHUB_OUTPUT"
-            echo "@chenmiao8563/dsh-token-ledger@${{ steps.version.outputs.value }} is already on the registry"
+            echo "@zhz8888/dsh-token-ledger@${{ steps.version.outputs.value }} is already on the registry"
           else
             echo "value=false" >> "$GITHUB_OUTPUT"
-            echo "@chenmiao8563/dsh-token-ledger@${{ steps.version.outputs.value }} is not on the registry yet"
+            echo "@zhz8888/dsh-token-ledger@${{ steps.version.outputs.value }} is not on the registry yet"
           fi
 
       # The failure this guards against is silent: a stored credential does not
@@ -195,7 +195,7 @@ jobs:
         run: |
           set -eu
           version="${{ steps.version.outputs.value }}"
-          package='@chenmiao8563/dsh-token-ledger'
+          package='@zhz8888/dsh-token-ledger'
           for attempt in $(seq 1 24); do
             live=$(npm view "$package@$version" version 2>/dev/null || true)
             if [ "$live" = "$version" ]; then

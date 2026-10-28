@@ -2,11 +2,11 @@
 
 为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 提供透明、可审计的 token 记账。
 
-[![CI](https://github.com/chenmiao8563/dsh-token-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/chenmiao8563/dsh-token-ledger/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/@chenmiao8563/dsh-token-ledger.svg)](https://www.npmjs.com/package/@chenmiao8563/dsh-token-ledger)
-[![license](https://img.shields.io/npm/l/@chenmiao8563/dsh-token-ledger.svg)](./LICENSE)
+[![CI](https://github.com/zhz8888/dsh-token-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/zhz8888/dsh-token-ledger/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@zhz8888/dsh-token-ledger.svg)](https://www.npmjs.com/package/@zhz8888/dsh-token-ledger)
+[![license](https://img.shields.io/npm/l/@zhz8888/dsh-token-ledger.svg)](./LICENSE)
 [![DSH](https://img.shields.io/badge/DSH-%5E0.2.0--rc.1-4c1a97)](https://github.com/deepseek-ai/deepseek-harness)
-[![last commit](https://img.shields.io/github/last-commit/chenmiao8563/dsh-token-ledger)](https://github.com/chenmiao8563/dsh-token-ledger/commits/main)
+[![last commit](https://img.shields.io/github/last-commit/zhz8888/dsh-token-ledger)](https://github.com/zhz8888/dsh-token-ledger/commits/main)
 
 [English](README.md) | 中文
 
@@ -66,7 +66,7 @@ scanned 139 session log(s), 344203 events, 29 forked session(s), 0 unreadable
 
 ```bash
 # 1. 把插件装进某个 profile
-dsh plugin --profile web add @chenmiao8563/dsh-token-ledger
+dsh plugin --profile web add @zhz8888/dsh-token-ledger
 
 # 2. 重启 DSH，然后确认那一行进去了
 dsh --profile web --dump-config | grep token-ledger
@@ -171,10 +171,10 @@ harness 会被报出来，而不是悄悄挂载。早先的版本声明的是 `d
 
 ```bash
 # 从 npm
-dsh plugin --profile web add @chenmiao8563/dsh-token-ledger
+dsh plugin --profile web add @zhz8888/dsh-token-ledger
 
 # 从 git URL（不涉及任何构建步骤）
-dsh plugin --profile web add github:chenmiao8563/dsh-token-ledger
+dsh plugin --profile web add github:zhz8888/dsh-token-ledger
 
 # 从本地仓库
 dsh plugin --profile web add /absolute/path/to/dsh-token-ledger
@@ -537,7 +537,7 @@ dsh-token-ledger audit --home ~/.dsh
 ## 卸载
 
 ```bash
-dsh plugin --profile web remove @chenmiao8563/dsh-token-ledger
+dsh plugin --profile web remove @zhz8888/dsh-token-ledger
 ```
 
 账本文件是**故意**不删的——要清空历史请自行删除 `<DSH_HOME>/token-ledger/`。
@@ -578,7 +578,7 @@ DOM 属性，React 会报出来，而手写的 `createElement` 会默默接受�
 欢迎提 issue 与 pull request。
 
 ```bash
-git clone https://github.com/chenmiao8563/dsh-token-ledger
+git clone https://github.com/zhz8888/dsh-token-ledger
 cd dsh-token-ledger
 pnpm install
 pnpm test          # 297 个测试，14 个文件
@@ -607,7 +607,7 @@ pnpm run verify    # 打包不变式
 
 ## 支持
 
-- **缺陷与需求** — [GitHub issues](https://github.com/chenmiao8563/dsh-token-ledger/issues)。
+- **缺陷与需求** — [GitHub issues](https://github.com/zhz8888/dsh-token-ledger/issues)。
 - **每个版本改了什么** — [CHANGELOG.md](CHANGELOG.md)。
 - **实际验证了什么、哪些没验证** — [docs/VERIFICATION.md](docs/VERIFICATION.md)。
 
@@ -652,7 +652,7 @@ registry 会有几分钟看起来是空的，尽管发布其实已经成功。�
   `_authToken` 就大声失败。
 
 npm 那边要接受它，需要在 npmjs.com 上给包配 **Trusted Publisher**（包 → Settings →
-Trusted Publisher → GitHub Actions），仓库填 `chenmiao8563/dsh-token-ledger`、
+Trusted Publisher → GitHub Actions），仓库填 `zhz8888/dsh-token-ledger`、
 workflow 填 `release.yml`、**Environment 留空**——填了一个 workflow 没有声明的
 environment 就匹配不上，registry 只会回一句
 `OIDC token exchange error - package not found`。

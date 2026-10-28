@@ -2,11 +2,11 @@
 
 Transparent, auditable token accounting for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
 
-[![CI](https://github.com/chenmiao8563/dsh-token-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/chenmiao8563/dsh-token-ledger/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/@chenmiao8563/dsh-token-ledger.svg)](https://www.npmjs.com/package/@chenmiao8563/dsh-token-ledger)
-[![license](https://img.shields.io/npm/l/@chenmiao8563/dsh-token-ledger.svg)](./LICENSE)
+[![CI](https://github.com/zhz8888/dsh-token-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/zhz8888/dsh-token-ledger/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@zhz8888/dsh-token-ledger.svg)](https://www.npmjs.com/package/@zhz8888/dsh-token-ledger)
+[![license](https://img.shields.io/npm/l/@zhz8888/dsh-token-ledger.svg)](./LICENSE)
 [![DSH](https://img.shields.io/badge/DSH-%5E0.2.0--rc.1-4c1a97)](https://github.com/deepseek-ai/deepseek-harness)
-[![last commit](https://img.shields.io/github/last-commit/chenmiao8563/dsh-token-ledger)](https://github.com/chenmiao8563/dsh-token-ledger/commits/main)
+[![last commit](https://img.shields.io/github/last-commit/zhz8888/dsh-token-ledger)](https://github.com/zhz8888/dsh-token-ledger/commits/main)
 
 English | [中文](README.zh.md)
 
@@ -70,7 +70,7 @@ checked. See [Settings page](#settings-page).
 
 ```bash
 # 1. add the plugin to a profile
-dsh plugin --profile web add @chenmiao8563/dsh-token-ledger
+dsh plugin --profile web add @zhz8888/dsh-token-ledger
 
 # 2. restart DSH, then check the row landed
 dsh --profile web --dump-config | grep token-ledger
@@ -187,10 +187,10 @@ editable by hand for the times the network is not there:
 
 ```bash
 # from npm
-dsh plugin --profile web add @chenmiao8563/dsh-token-ledger
+dsh plugin --profile web add @zhz8888/dsh-token-ledger
 
 # from a git URL (no build step is involved)
-dsh plugin --profile web add github:chenmiao8563/dsh-token-ledger
+dsh plugin --profile web add github:zhz8888/dsh-token-ledger
 
 # from a local checkout
 dsh plugin --profile web add /absolute/path/to/dsh-token-ledger
@@ -643,7 +643,7 @@ disk again.
 ## Uninstall
 
 ```bash
-dsh plugin --profile web remove @chenmiao8563/dsh-token-ledger
+dsh plugin --profile web remove @zhz8888/dsh-token-ledger
 ```
 
 The ledger file is left alone on purpose — delete
@@ -691,7 +691,7 @@ and how, including the evidence behind the fork rule.
 Issues and pull requests are welcome.
 
 ```bash
-git clone https://github.com/chenmiao8563/dsh-token-ledger
+git clone https://github.com/zhz8888/dsh-token-ledger
 cd dsh-token-ledger
 pnpm install
 pnpm test          # 297 tests in 14 files
@@ -729,7 +729,7 @@ available to you, contact the maintainer directly at the address in
 
 ## Support
 
-- **Bugs and feature requests** — [GitHub issues](https://github.com/chenmiao8563/dsh-token-ledger/issues).
+- **Bugs and feature requests** — [GitHub issues](https://github.com/zhz8888/dsh-token-ledger/issues).
 - **What changed in each version** — [CHANGELOG.md](CHANGELOG.md).
 - **What was actually verified, and what was not** — [docs/VERIFICATION.md](docs/VERIFICATION.md).
 
@@ -781,7 +781,7 @@ guarded inside the workflow:
 
 For the npm side to accept it, the package needs a **Trusted Publisher** configured at
 npmjs.com (package → Settings → Trusted Publisher → GitHub Actions) with repository
-`chenmiao8563/dsh-token-ledger`, workflow `release.yml`, and **no environment** —
+`zhz8888/dsh-token-ledger`, workflow `release.yml`, and **no environment** —
 an environment name that the workflow does not declare does not match, and the
 registry answers only `OIDC token exchange error - package not found`.
 

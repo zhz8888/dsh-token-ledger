@@ -1,5 +1,5 @@
 {
-  "name": "@chenmiao8563/dsh-token-ledger",
+  "name": "@zhz8888/dsh-token-ledger",
   "version": "1.1.2",
   "description": "Transparent, auditable token accounting for DeepSeek Harness: a restart-safe ledger over the durable session log, a CLI that recomputes it from raw logs and diffs the result, and a bill — by workspace, session, model or provider, exportable as CSV or JSON.",
   "keywords": [
@@ -19,7 +19,7 @@
     "llm-observability"
   ],
   "license": "MIT",
-  "author": "chenmiao8563 <1420647373@qq.com>",
+  "author": "zhz8888 <zhz1021@gmail.com>",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -115,12 +115,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/chenmiao8563/dsh-token-ledger.git"
+    "url": "git+https://github.com/zhz8888/dsh-token-ledger.git"
   },
   "bugs": {
-    "url": "https://github.com/chenmiao8563/dsh-token-ledger/issues"
+    "url": "https://github.com/zhz8888/dsh-token-ledger/issues"
   },
-  "homepage": "https://github.com/chenmiao8563/dsh-token-ledger#readme",
+  "homepage": "https://github.com/zhz8888/dsh-token-ledger#readme",
   "publishConfig": {
     "access": "public"
   }

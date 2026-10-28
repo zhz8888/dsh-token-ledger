@@ -390,7 +390,7 @@ test('a locale that cannot bind is treated as unavailable, not as fatal', () => 
 
 test('the module registers itself with the client loader under its package name', () => {
   const loaded = loadClientModule()
-  assert.equal(loaded.id, '@chenmiao8563/dsh-token-ledger')
+  assert.equal(loaded.id, '@zhz8888/dsh-token-ledger')
   assert.equal(typeof loaded.exports.apply, 'function')
   assert.deepEqual(loaded.exports.inject, ['slots', 'locale'])
 })

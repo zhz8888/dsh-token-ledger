@@ -8,6 +8,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The package and the repository moved to `zhz8888`.** The package was published as
+  `@chenmiao8563/dsh-token-ledger`; it is now `@zhz8888/dsh-token-ledger`, and the
+  repository, the issue tracker, the clone URL and the npm Trusted Publisher setup all
+  point at the new owner. The client module id and the composition row in
+  `cordis.patch.yml` moved with the name, because the client half registers under its
+  package name and DSH resolves the bundle by it — the two are one identity, not two
+  spellings. The Cordis entry id stays `token-ledger`, which is what a profile-level
+  override targets, and the CLI command stays `dsh-token-ledger`.
+
+  The MIT copyright is retained and extended rather than replaced: the upstream notice
+  stays, because MIT requires that the original notice travel with the code, and the
+  fork's holder is added beside it. The captures in
+  [`docs/VERIFICATION.md`](docs/VERIFICATION.md) still show the old name, because they
+  are what the commands printed at the time; that file records the rename separately.
+
 - **Both READMEs now read like a public repository's.** A table of contents, a quick start,
   a requirements table, a troubleshooting section, and the contributing, security, support and
   acknowledgements sections a public project is expected to have — the same section set in
@@ -969,16 +984,16 @@ so both now have regression tests.
 - Zero runtime dependencies, zero peer dependencies and no install scripts, so
   the package installs without a build step.
 
-[Unreleased]: https://github.com/chenmiao8563/dsh-token-ledger/compare/v1.1.2...HEAD
-[1.0.0]: https://github.com/chenmiao8563/dsh-token-ledger/compare/v0.8.0...v1.0.0
-[0.8.0]: https://github.com/chenmiao8563/dsh-token-ledger/compare/v0.7.2...v0.8.0
-[0.7.2]: https://github.com/chenmiao8563/dsh-token-ledger/compare/v0.7.1...v0.7.2
-[0.7.1]: https://github.com/chenmiao8563/dsh-token-ledger/compare/v0.7.0...v0.7.1
-[0.7.0]: https://github.com/chenmiao8563/dsh-token-ledger/compare/v0.6.0...v0.7.0
-[0.6.0]: https://github.com/chenmiao8563/dsh-token-ledger/compare/v0.5.0...v0.6.0
-[0.5.0]: https://github.com/chenmiao8563/dsh-token-ledger/compare/v0.4.0...v0.5.0
-[0.4.0]: https://github.com/chenmiao8563/dsh-token-ledger/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/chenmiao8563/dsh-token-ledger/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/chenmiao8563/dsh-token-ledger/compare/v0.1.1...v0.2.0
-[0.1.1]: https://github.com/chenmiao8563/dsh-token-ledger/compare/v0.1.0...v0.1.1
-[0.1.0]: https://github.com/chenmiao8563/dsh-token-ledger/releases/tag/v0.1.0
+[Unreleased]: https://github.com/zhz8888/dsh-token-ledger/compare/v1.1.2...HEAD
+[1.0.0]: https://github.com/zhz8888/dsh-token-ledger/compare/v0.8.0...v1.0.0
+[0.8.0]: https://github.com/zhz8888/dsh-token-ledger/compare/v0.7.2...v0.8.0
+[0.7.2]: https://github.com/zhz8888/dsh-token-ledger/compare/v0.7.1...v0.7.2
+[0.7.1]: https://github.com/zhz8888/dsh-token-ledger/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/zhz8888/dsh-token-ledger/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/zhz8888/dsh-token-ledger/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/zhz8888/dsh-token-ledger/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/zhz8888/dsh-token-ledger/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/zhz8888/dsh-token-ledger/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/zhz8888/dsh-token-ledger/compare/v0.1.1...v0.2.0
+[0.1.1]: https://github.com/zhz8888/dsh-token-ledger/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/zhz8888/dsh-token-ledger/releases/tag/v0.1.0
