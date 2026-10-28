@@ -942,6 +942,46 @@ profile 里那个插件仍然是从前发布的 `@chenmiao8563/dsh-token-ledger@
 后的包是另外一步，而且它需要 npm 上存在 `@zhz8888` 这个 scope，并为这个仓库配置好
 Trusted Publisher。
 
+## 费率的展开，2026-10-28——一个厂商的全部模型
+
+费率页现在能为每个厂商展开出它的全部模型。这一节记的是**怎么查的**，以及**查到了什么**。
+
+宿主半边用桩传输驱动（不联网），路由是插件自己的那一个，请求打在一个真实的 `node:http`
+服务器上——和真宿主做的三件事一样，只是少了网络：
+
+```
+GET /api/token-ledger/rates -> 200, 2413 bytes
+  openai     models= 5 published=3 expandable=true expandedCount=5
+  anthropic  models= 2 published=2 expandable=false expandedCount=2
+  payload carries no full list: true
+
+GET /api/token-ledger/rates?vendor=openai -> 200, 1111 bytes
+  vendor=openai modelCount=5 publishedCount=3
+  openai/gpt-6       in=1.25  out=10     source=fetched
+  openai/gpt-5.1     in=1.25  out=10     source=fetched
+  openai/gpt-5       in=1.25  out=10     source=fetched
+  openai/gpt-4o      in=2.5   out=10     source=fetched
+  openai/gpt-4o-mini in=0.15  out=0.6    source=fetched
+
+GET /api/token-ledger/rates?vendor=nope -> 404 {"error":"unknown vendor"}
+GET /api/token-ledger/rates?vendor=      -> 200, 2413 bytes (the whole payload, as without the parameter)
+GET /api/token-ledger/rates (foreign origin) -> 403 {"error":"forbidden"}
+
+rates.json 6394 bytes; the cache keeps openai's whole list: 5 rows
+```
+
+三件事在这里被钉住了：
+
+- **常规载荷不携带完整清单。** 上面那行 `payload carries no full list: true` 是逐个厂商
+  检查的：载荷里没有 `allModels`。这不是洁癖——这份载荷同时也是账单与概览计价所用的价目
+  目录，每一分钟会被取一次。
+- **展开后拿到的是全部模型。** OpenAI 有五个模型，载荷里只发布三个；带厂商的那次请求给出
+  五个，而且正是同一批 id 与价格，不是另一份数据。
+- **不认识的厂商就说不知道。** `?vendor=nope` 是 404 而不是空列表：一个空列表看上去像是
+  「这个厂商没有标价」。空的 `?vendor=` 被当成「没有厂商」，也就是今天那份载荷。
+
+缓存里留着完整清单，所以断网的宿主同样能展开一个厂商。
+
 ## 未验证
 
 直说吧，因为一份只列成功项的验证文件没有用：
@@ -957,7 +997,9 @@ Trusted Publisher。
   被检查过，浏览器拿到的 bundle 也是从一个运行中的宿主上取回来的——但还没有人在屏幕上
   看过 **费率** 或 **账单** 页签。0.3.0 那一轮的反馈来自盯着页面看；费率与账单的工作
   还没经过这一遍。尤其是账单的 CSV 下载，是从响应头与响应体断言出来的，不是靠在浏览器
-  里点按钮；而那四个堆叠分区也没有在窄到需要横向滚动的面板里被看过。
+  里点按钮；而那四个堆叠分区也没有在窄到需要横向滚动的面板里被看过。厂商的展开按钮也
+  只过了标记这一关：它能展开出全部模型、也能再收起来，是断言出来的；它在厂商名与计数
+  旁边看起来对不对，没有人用眼睛看过。
 - **很长的会话标题看起来是什么样。** DSH 自己起的标题有时是首个提示词的截断，有时是
   生成的名字；页面用一个省略号截断，并把完整标题留在悬停提示里——这是一个关于 CSS 的
   说法，不是一个被观察到的事实。

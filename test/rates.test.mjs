@@ -18,6 +18,7 @@ import {
   PRICE_CURRENCY,
   PRICE_SOURCES,
   applyOverrides,
+  mergeModelOverride,
   parseCatalogue,
   parseFx,
   parseModelsDev,
@@ -65,6 +66,21 @@ test('the catalogue keeps only the newest few models per vendor', () => {
     'newest first, and the fourth-oldest is dropped',
   )
   assert.equal(acme.modelCount, 4, 'the vendor count reports real models, not the quota')
+})
+
+test('the catalogue keeps every priced model, and publishes the newest few', () => {
+  // The group header says how many models a provider has, so the host has to
+  // have them all: a provider can only be expanded to its remaining models if
+  // the rest of them were kept rather than dropped at the quota.
+  const parsed = parseCatalogue(cataloguePayload(), { perVendor: 3, now: Date.parse('2026-01-01') })
+  const acme = parsed.vendors.find((entry) => entry.vendor === 'acme')
+  assert.deepEqual(
+    acme.allModels.map((entry) => entry.id),
+    ['acme/new-flash', 'acme/mid-flash', 'acme/old-flash', 'acme/ancient'],
+    'the whole list, newest first',
+  )
+  assert.deepEqual(acme.models, acme.allModels.slice(0, 3), 'the published rows are the head of that list')
+  assert.equal(acme.modelCount, 4, 'and the count is still the number of models the provider has')
 })
 
 test('variants and retired models never occupy a vendor quota', () => {
@@ -212,6 +228,24 @@ test('the per-vendor source publishes each vendor’s own list price', () => {
 
   assert.equal(parsed.vendors[2].models[0].id, 'volcengine/doubao-seed-2-0', 'an id already carrying a vendor part is left alone')
   assert.equal(parsed.total, 4, 'every priced model the curated vendors listed')
+})
+
+test('the per-vendor source keeps every priced model as well', () => {
+  // Same contract as the gateway source: the whole list is kept, and the
+  // published rows are its head.
+  const payload = {
+    alibaba: {
+      models: {
+        'deepseek-v4-flash-0731': { id: 'deepseek-v4-flash-0731', name: 'DeepSeek V4 Flash', release_date: '2026-09-30', cost: { input: 0.2, output: 0.4 } },
+        'qwen3.8-max': { id: 'qwen3.8-max', name: 'Qwen3.8 Max', release_date: '2026-08-03', cost: { input: 2, output: 6 } },
+      },
+    },
+  }
+  const parsed = parseModelsDev(payload, { vendorLimit: 0, perVendor: 1 })
+  const qwen = parsed.vendors.find((entry) => entry.vendor === 'qwen')
+  assert.deepEqual(qwen.allModels.map((entry) => entry.id), ['qwen/qwen3.8-max', 'qwen/deepseek-v4-flash-0731'])
+  assert.deepEqual(qwen.models, qwen.allModels.slice(0, 1), 'the published row is the head of the whole list')
+  assert.equal(qwen.modelCount, 2, 'and the count is still the number of models')
 })
 
 test('a vendor’s own models win its slots over the ones it hosts', () => {
@@ -379,6 +413,63 @@ test('a null override clears a price instead of zeroing it', () => {
   const model = result.vendors.find((entry) => entry.vendor === 'acme').models.find((entry) => entry.id === 'acme/new-flash')
   assert.equal(model.prices.input, null, 'not priced, which is not the same claim as free')
   assert.equal(model.prices.output, 0.8)
+})
+
+/** The fetched row of one model, as the catalogue publishes it. */
+function fetchedRow(id = 'acme/new-flash') {
+  const vendors = parseCatalogue(cataloguePayload()).vendors
+  return vendors.find((entry) => entry.vendor === 'acme').models.find((entry) => entry.id === id)
+}
+
+test('a typed price merges over a fetched row and reports what it disagrees with', () => {
+  // What the catalogue publishes for acme/new-flash: 0.2 in, 0.8 out, 0.02 cached.
+  const merged = mergeModelOverride(fetchedRow(), { input: 0.42, output: 0.9 })
+  assert.equal(merged.model.prices.input, 0.42, 'the typed price wins')
+  assert.equal(merged.model.prices.output, 0.9)
+  assert.equal(merged.model.prices.cacheRead, 0.02, 'a field left alone keeps the fetched value')
+  assert.equal(merged.model.source, 'manual')
+  assert.equal(merged.changed, true, 'a price moved')
+  assert.deepEqual(
+    merged.conflicts,
+    [
+      { key: 'input', manual: 0.42, official: 0.2 },
+      { key: 'output', manual: 0.9, official: 0.8 },
+    ],
+    'both numbers, so the page can offer to adopt the official one or to keep the typed one',
+  )
+})
+
+test('re-typing the published price is not a claim on the row', () => {
+  const merged = mergeModelOverride(fetchedRow(), { input: 0.2 })
+  assert.equal(merged.model.source, 'fetched', 'a row a refresh would reproduce unchanged needs no protection')
+  assert.equal(merged.changed, false)
+  assert.deepEqual(merged.conflicts, [], 'the same number is not a disagreement')
+})
+
+test('a disagreement already answered is not raised again', () => {
+  const merged = mergeModelOverride(fetchedRow(), { input: 0.42, ack: { input: 0.2 } })
+  assert.deepEqual(merged.conflicts, [], 'the official number the user had in view is recorded in the ack')
+  assert.equal(merged.changed, true, 'and the typed price still wins')
+  assert.equal(merged.model.prices.input, 0.42)
+})
+
+test('a row with no typed price is left as it was fetched', () => {
+  const merged = mergeModelOverride(fetchedRow(), undefined)
+  assert.equal(merged.model.source, 'fetched')
+  assert.equal(merged.changed, false)
+  assert.deepEqual(merged.conflicts, [])
+})
+
+test('the published table and the full list merge a typed price the same way', () => {
+  // One rule in one place: a model must not read differently depending on
+  // where the reader found it.
+  const vendors = parseCatalogue(cataloguePayload()).vendors
+  const override = { input: 0.42 }
+  const merged = mergeModelOverride(fetchedRow(), override)
+  const applied = applyOverrides({ vendors, overrides: { models: { 'acme/new-flash': override } } })
+  const appliedRow = applied.vendors.find((entry) => entry.vendor === 'acme').models.find((entry) => entry.id === 'acme/new-flash')
+  assert.deepEqual(appliedRow, merged.model, 'the same row, merged the same way')
+  assert.equal(applied.overriddenModels, 1)
 })
 
 test('prices typed for a model no fetch described are still published', () => {

@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Every provider on the Rates page can be expanded to all of its models.** The table
+  publishes each provider's newest two or three models while the group header says
+  how many models the provider has in all, so the two numbers never agreed. The ▸ at
+  the right of a provider's header now expands that group to **every** model the
+  catalogue carries, and pressing it again collapses the list again.
+
+  The full list is served on demand — `GET /api/token-ledger/rates?vendor=<provider>`
+  answers with one provider's models — because the rates payload is also what the
+  bill and the overview are priced from, and a reader who never expands a provider
+  should not pay for rows they did not ask for. The host keeps every published
+  provider's models in `rates.json`, so an offline host expands a provider just as
+  well. Hand-entered prices are merged into the expanded list, so a price typed
+  there is the price that shows, and an open list is fetched again after a save, so
+  it never shows a number the host has already replaced.
+
 ## [1.1.3] - 2026-10-28
 
 ### Changed

@@ -111,13 +111,13 @@ function makeRes() {
 /**
  * A stand-in request.
  *
- * @param {{ method?: string, address?: string|undefined, origin?: string }} [options] - request shape.
+ * @param {{ method?: string, address?: string|undefined, origin?: string, url?: string }} [options] - request shape.
  * @returns {object} the request.
  */
-function makeReq({ method = 'GET', address = '127.0.0.1', origin } = {}) {
+function makeReq({ method = 'GET', address = '127.0.0.1', origin, url } = {}) {
   const headers = {}
   if (origin !== undefined) headers.origin = origin
-  return { method, headers, socket: { remoteAddress: address } }
+  return { method, headers, socket: { remoteAddress: address }, url }
 }
 
 /**
@@ -247,7 +247,7 @@ test('the clock is injectable, so the payload is deterministic under test', () =
 /**
  * A stand-in rates service.
  *
- * @param {{ read?: () => object, saveOverrides?: (body: unknown) => object, refresh?: (trigger: object) => Promise<object> }} [parts] - behaviour overrides.
+ * @param {{ read?: () => object, readVendor?: (vendor: string) => object|undefined, saveOverrides?: (body: unknown) => object, refresh?: (trigger: object) => Promise<object> }} [parts] - behaviour overrides.
  * @returns {object} the service.
  */
 function fakeRates(parts = {}) {
@@ -257,6 +257,7 @@ function fakeRates(parts = {}) {
     // The real service always has one; a test that does not ask for a refresh
     // should not have to say so, hence the spread rather than a default.
     ...(parts.refresh === undefined ? {} : { refresh: parts.refresh }),
+    ...(parts.readVendor === undefined ? {} : { readVendor: parts.readVendor }),
     read:
       parts.read ??
       (() => ({
@@ -350,6 +351,48 @@ test('a rates HEAD request is served', async () => {
   const route = createRatesRoute({ rates: fakeRates() })
   const res = await callAsync(route, makeReq({ method: 'HEAD' }))
   assert.equal(res.status, 200)
+})
+
+test('a rates GET for one provider answers with that provider’s whole list', async () => {
+  const route = createRatesRoute({
+    rates: fakeRates({
+      readVendor: (vendor) =>
+        vendor === 'acme' ? { vendor: 'acme', modelCount: 12, publishedCount: 3, models: [{ id: 'acme/one' }] } : undefined,
+    }),
+  })
+  const res = await callAsync(route, makeReq({ url: `${RATES_PATH}?vendor=acme` }))
+  assert.equal(res.status, 200)
+  assert.match(res.headers['content-type'], /application\/json/)
+  const body = JSON.parse(res.body)
+  assert.equal(body.vendor, 'acme')
+  assert.equal(body.modelCount, 12, 'how many rows the whole list has')
+  assert.equal(body.publishedCount, 3, 'and how many of them were already published')
+  assert.deepEqual(body.models, [{ id: 'acme/one' }])
+})
+
+test('a rates GET for a provider the host does not carry is a 404', async () => {
+  // An unknown provider is not an empty list: an empty list would read as a
+  // provider that prices nothing.
+  const route = createRatesRoute({ rates: fakeRates({ readVendor: () => undefined }) })
+  const res = await callAsync(route, makeReq({ url: `${RATES_PATH}?vendor=nobody` }))
+  assert.equal(res.status, 404)
+  assert.deepEqual(JSON.parse(res.body), { error: 'unknown vendor' })
+})
+
+test('a rates GET without a provider is the whole payload, as before', async () => {
+  const route = createRatesRoute({ rates: fakeRates({ readVendor: () => ({ vendor: 'acme', modelCount: 1, publishedCount: 1, models: [] }) }) })
+  for (const url of [RATES_PATH, `${RATES_PATH}?`, `${RATES_PATH}?vendor=`]) {
+    const res = await callAsync(route, makeReq({ url }))
+    assert.equal(res.status, 200, url)
+    assert.equal(JSON.parse(res.body).plugin, 'token-ledger', url)
+  }
+})
+
+test('a provider list is refused from off the machine, like the rest of the route', async () => {
+  const route = createRatesRoute({ rates: fakeRates({ readVendor: () => ({ vendor: 'acme', modelCount: 1, publishedCount: 1, models: [] }) }) })
+  const res = await callAsync(route, makeReq({ address: '192.168.1.20', url: `${RATES_PATH}?vendor=acme` }))
+  assert.equal(res.status, 403)
+  assert.equal(JSON.parse(res.body).error, 'forbidden')
 })
 
 test('an offline host still gets a usable shape, not an error', async () => {

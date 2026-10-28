@@ -51,6 +51,15 @@ the host's locale service, so they follow the host's language.
   cannot stand behind. A price the vendor does not publish is a dash, which is a
   different claim from "free", and a published `0` is flagged as *not necessarily
   free* because some platforms bill by the hour and publish no per-token price.
+- **Every vendor can be expanded to all of its models.** The table lists each vendor's
+  newest two or three by default, and the number beside the vendor's name is how many
+  models it has in all. The ▸ at the right of the vendor's header expands that group to
+  **every** model the catalogue carries, and pressing it again collapses the list
+  again. The expanded list is fetched from the host when it is asked for
+  (`GET /api/token-ledger/rates?vendor=…`), so a reader who never expands one never
+  pays for those rows. When the fetch fails the page says so and keeps the rows it
+  already had, and a price edited inside an expanded list is saved like any other —
+  the open list is fetched again afterwards, so it never shows a stale number.
 - **Prices come from where the vendors publish them.** None of these vendors
   exposes prices through an API — their model-list endpoints return ids and no
   money, so the number only exists on their pricing page. Where that page can be
@@ -170,7 +179,9 @@ period**, so this month by workspace can sit above today by model.
 
 The page reads three loopback-only routes: `GET /api/token-ledger/summary` for the
 overview, `GET|POST /api/token-ledger/rates` for prices and the rate, and
-`GET /api/token-ledger/bill` for the bill. The overview polls once a minute, prices
+`GET /api/token-ledger/bill` for the bill. Expanding a vendor to all of its models
+reads the same rates route with the vendor named:
+`GET /api/token-ledger/rates?vendor=<vendor>`. The overview polls once a minute, prices
 and the bill only while their view is open. All three refuse a
 non-loopback peer, so they stay private even if the web server is bound to
 `0.0.0.0`. The write half additionally requires a JSON content type — a

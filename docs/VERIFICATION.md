@@ -1045,6 +1045,51 @@ published `@chenmiao8563/dsh-token-ledger@1.1.2`; installing the renamed package
 a separate step, and it needs the `@zhz8888` scope to exist on npm with a Trusted
 Publisher configured for this repository.
 
+## The rates expansion, 2026-10-28 — one vendor's whole model list
+
+The Rates page can now expand a vendor to every model it has. This section records
+**how it was checked** and **what came back**.
+
+The host half was driven with a stub transport (no network), the route is the
+plugin's own, and the requests went to a real `node:http` server — the same three
+things the real host does, minus the network:
+
+```
+GET /api/token-ledger/rates -> 200, 2413 bytes
+  openai     models= 5 published=3 expandable=true expandedCount=5
+  anthropic  models= 2 published=2 expandable=false expandedCount=2
+  payload carries no full list: true
+
+GET /api/token-ledger/rates?vendor=openai -> 200, 1111 bytes
+  vendor=openai modelCount=5 publishedCount=3
+  openai/gpt-6       in=1.25  out=10     source=fetched
+  openai/gpt-5.1     in=1.25  out=10     source=fetched
+  openai/gpt-5       in=1.25  out=10     source=fetched
+  openai/gpt-4o      in=2.5   out=10     source=fetched
+  openai/gpt-4o-mini in=0.15  out=0.6    source=fetched
+
+GET /api/token-ledger/rates?vendor=nope -> 404 {"error":"unknown vendor"}
+GET /api/token-ledger/rates?vendor=      -> 200, 2413 bytes (the whole payload, as without the parameter)
+GET /api/token-ledger/rates (foreign origin) -> 403 {"error":"forbidden"}
+
+rates.json 6394 bytes; the cache keeps openai's whole list: 5 rows
+```
+
+Three things are pinned here:
+
+- **The ordinary payload carries no full list.** That line
+  (`payload carries no full list: true`) checks every vendor entry for
+  `allModels`. It is not tidiness: this payload is also the price catalogue the
+  bill and the overview price from, and it is fetched once a minute.
+- **The expansion is the whole list.** OpenAI has five models and the payload
+  publishes three; the request that names the vendor returns five, with the same
+  ids and the same prices — not a second set of data.
+- **A vendor it does not know says so.** `?vendor=nope` is a 404 rather than an
+  empty list, because an empty list reads as "this vendor has nothing priced".
+  An empty `?vendor=` is "no vendor", which is today's payload.
+
+The cache keeps the whole list, so an offline host expands a vendor just as well.
+
 ## Not verified
 
 Stated plainly, because a verification file that only lists successes is not
@@ -1066,7 +1111,10 @@ useful:
   looking at the page; the rates and bill work has not had that pass. The bill's
   CSV download in particular is asserted from the response headers and body, not
   by clicking the button in a browser, and the four stacked sections have not been
-  looked at in a panel narrow enough to need their horizontal scroll.
+  looked at in a panel narrow enough to need their horizontal scroll. The vendor
+  expander has had the same pass only as markup: that the button opens a list of
+  every model and closes it again is asserted, and that it *looks* right beside the
+  vendor's name and count has not been seen by an eye.
 - **What a long session title looks like.** DSH's own titles are sometimes a
   truncated first prompt and sometimes a generated name; the page truncates with an
   ellipsis and keeps the full title in the tooltip, which is a CSS claim rather than

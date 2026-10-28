@@ -1265,13 +1265,14 @@ test('a rates payload missing every optional field still renders', () => {
  * @param {object} state - the rates state.
  * @param {object[]} sent - a recorder for the patches the view sends.
  * @param {{ filter?: unknown, fxDraft?: unknown, editing?: unknown, draft?: unknown }} [hooks] - primed drafts.
+ * @param {object} [extra] - the view's other props, such as the expander's state.
  * @returns {unknown} the expanded tree.
  */
-function renderRatesView(module, state, sent, hooks = {}) {
+function renderRatesView(module, state, sent, hooks = {}, extra = {}) {
   const priming = module.priming
   priming.length = 0
   priming.push(hooks.filter ?? DEFAULT, hooks.fxDraft ?? DEFAULT, hooks.editing ?? DEFAULT, hooks.draft ?? DEFAULT)
-  const tree = expand(module.exports.RatesView({ t: fakeT(), state, onPatch: (patch) => sent.push(patch) }))
+  const tree = expand(module.exports.RatesView({ t: fakeT(), state, onPatch: (patch) => sent.push(patch), ...extra }))
   priming.length = 0
   return tree
 }
@@ -1402,6 +1403,90 @@ test('the refresh button asks the host to go and fetch', () => {
   assert.equal(busy[0].props.disabled, true)
 })
 
+test('a vendor with more models than the host published gets an expander', () => {
+  const { module } = loadWithSection()
+  const payload = ratesPayload()
+  // What the host says about the rest of the vendor's list.
+  payload.vendors[0].expandable = true
+  payload.vendors[0].expandedCount = 12
+  const tree = renderRatesView(module, { status: 'ready', data: payload, error: null }, [], {})
+  const expanders = findAllByClass(tree, 'tl-expand')
+  // The hand-entered group has no catalogue behind it, so there is nothing to
+  // expand there.
+  assert.equal(expanders.length, 1, 'only the vendor with a catalogue behind it gets one')
+  assert.equal(expanders[0].props['aria-expanded'], 'false', 'the list starts closed')
+  assert.ok(String(expanders[0].props['aria-label']).includes('Acme'), 'the button names the vendor it belongs to')
+  assert.ok(String(expanders[0].props.title).includes('12'), 'the tooltip says how much is behind the button')
+  // The published rows are what the group shows until the rest of the list
+  // arrives: the expander adds rows, it does not take them away.
+  assert.ok(findRow(tree, 'Acme Flagship') !== undefined, 'the published rows are on screen')
+  assert.equal(findAllByClass(tree, 'tl-rate-row').length, 3, 'two published rows and one hand-entered one')
+})
+
+test('an open vendor shows every model the host carries for it', () => {
+  const { module } = loadWithSection()
+  const payload = ratesPayload()
+  const published = payload.vendors[0].models
+  const whole = [
+    ...published,
+    { id: 'acme/pro', name: 'Acme Pro', vendor: 'acme', created: 150, contextLength: 64000, prices: { input: 1, output: 3, cacheRead: null, cacheWrite: null }, source: 'fetched' },
+  ]
+  const tree = renderRatesView(module, { status: 'ready', data: payload, error: null }, [], {}, {
+    expanded: ['acme'],
+    vendorModels: { acme: { status: 'ready', models: whole } },
+  })
+  const expanders = findAllByClass(tree, 'tl-expand')
+  assert.equal(expanders[0].props['aria-expanded'], 'true', 'the button reports the open list')
+  assert.ok(findRow(tree, 'Acme Pro') !== undefined, 'the model that only the full list carries is on screen')
+  assert.ok(findRow(tree, 'Acme Flagship') !== undefined, 'the published rows are still on screen')
+  assert.equal(findAllByClass(tree, 'tl-rate-row').length, 4, 'the whole list and the hand-entered row')
+})
+
+test('the expander asks for its own vendor and for nothing else', () => {
+  const { module } = loadWithSection()
+  const asked = []
+  const tree = renderRatesView(module, { status: 'ready', data: ratesPayload(), error: null }, [], {}, {
+    onToggleVendor: (vendorId) => asked.push(vendorId),
+  })
+  findAllByClass(tree, 'tl-expand')[0].props.onClick()
+  assert.deepEqual(asked, ['acme'])
+})
+
+test('the group says while the list is loading, and says so when the fetch failed', () => {
+  const { module } = loadWithSection()
+  const loading = renderRatesView(module, { status: 'ready', data: ratesPayload(), error: null }, [], {}, {
+    expanded: ['acme'],
+    vendorModels: { acme: { status: 'loading' } },
+  })
+  assert.ok(hasText(collectText(loading), 'expandingModels'), 'the group says the list is on its way')
+  assert.ok(findRow(loading, 'Acme Flagship') !== undefined, 'the published rows stay on screen')
+
+  const failed = renderRatesView(module, { status: 'ready', data: ratesPayload(), error: null }, [], {}, {
+    expanded: ['acme'],
+    vendorModels: { acme: { status: 'error', error: 'HTTP 404' } },
+  })
+  assert.ok(hasText(collectText(failed), 'expandFailed'), 'the group says the expansion failed')
+  assert.ok(hasText(collectText(failed), 'HTTP 404'), 'and says why')
+  assert.ok(findRow(failed, 'Acme Flagship') !== undefined, 'the published rows stay on screen')
+})
+
+test('the search filter reads the list that is on screen', () => {
+  const { module } = loadWithSection()
+  const payload = ratesPayload()
+  const whole = [
+    ...payload.vendors[0].models,
+    { id: 'acme/pro', name: 'Acme Pro', vendor: 'acme', created: 150, contextLength: 64000, prices: { input: 1, output: 3, cacheRead: null, cacheWrite: null }, source: 'fetched' },
+  ]
+  const tree = renderRatesView(module, { status: 'ready', data: payload, error: null }, [], {
+    filter: 'pro',
+  }, {
+    expanded: ['acme'],
+    vendorModels: { acme: { status: 'ready', models: whole } },
+  })
+  assert.ok(findRow(tree, 'Acme Pro') !== undefined, 'the expanded list is what the filter reads')
+  assert.equal(findRow(tree, 'Acme Flagship'), undefined, 'a model that does not match is not shown')
+})
+
 test('each review answer names the fields it settles, and the host supplies the price', () => {
   const { module } = loadWithSection()
   const sent = []
@@ -1436,7 +1521,10 @@ test('prices and the bill are fetched only when their view is opened', () => {
   reactEffects.length = 0
   // The overview render registers an effect per view; only the first should fetch.
   render(module, { status: 'loading', data: null, error: null })
-  assert.equal(reactEffects.length, 3, 'overview, rates and bill')
+  // Four: the three views, and the effect that reads an expanded list again
+  // when the host's catalogue moves. It fetches nothing on its own — it only
+  // follows a catalogue that has already arrived.
+  assert.equal(reactEffects.length, 4, 'overview, rates, bill and the expanded lists')
   const calls = []
   const realFetch = globalThis.fetch
   let intervals = 0
@@ -1453,7 +1541,7 @@ test('prices and the bill are fetched only when their view is opened', () => {
     // On the overview neither of the other two may read anything: the catalogue is
     // a couple of hundred rows, and a reader who stays here should not pay for them
     // nor for a bill they did not ask for.
-    for (const index of [1, 2]) {
+    for (const index of [1, 2, 3]) {
       assert.equal(reactEffects[index](), undefined, 'no cleanup is needed when nothing was started')
     }
     assert.deepEqual(calls, [])
@@ -1524,8 +1612,146 @@ test('prices and the bill are fetched only when their view is opened', () => {
   }
 })
 
-/* ------------------------------------------------------------------- bill -- */
+test('opening a provider asks the host for that provider’s full list', () => {
+  const { module } = loadWithSection()
+  const calls = []
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (url) => {
+    calls.push(url)
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ vendor: 'acme', modelCount: 12, publishedCount: 2, models: [] }) })
+  }
+  try {
+    const { tree } = renderRates(module, { status: 'ready', data: ratesPayload(), error: null })
+    const expander = findAllByClass(tree, 'tl-expand')[0]
+    assert.ok(expander !== undefined, 'the provider with more models carries an expander')
+    expander.props.onClick()
+    // The host serves one provider at a time, so the request names the provider.
+    assert.deepEqual(calls, ['/api/token-ledger/rates?vendor=acme'])
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
 
+test('a failed expansion is tried again when the expander is pressed again', async () => {
+  const { module } = loadWithSection()
+  const calls = []
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (url) => {
+    calls.push(url)
+    return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({ error: 'unknown vendor' }) })
+  }
+  try {
+    const { tree } = renderRates(module, { status: 'ready', data: ratesPayload(), error: null })
+    const expander = findAllByClass(tree, 'tl-expand')[0]
+    expander.props.onClick()
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(calls.length, 1, 'the list was asked for once')
+    // The failure closed the group, so pressing the expander again asks again
+    // rather than doing nothing.
+    expander.props.onClick()
+    assert.equal(calls.length, 2, 'the failed list is asked for once more')
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
+
+test('a price save re-reads the open lists, so an edited row is not left stale', async () => {
+  const { module } = loadWithSection()
+  const calls = []
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (url, options) => {
+    calls.push({ url, method: options?.method ?? 'GET' })
+    const body = options?.method === 'POST' ? { ok: true, rates: ratesPayload() } : { vendor: 'acme', modelCount: 12, publishedCount: 2, models: [] }
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) })
+  }
+  try {
+    const priming = module.priming
+    priming.length = 0
+    // The section's hooks first and the rates view's after them. The open vendor
+    // is primed directly, because the stand-in React keeps no state between
+    // renders and there is no way to open a group by clicking.
+    priming.push(
+      DEFAULT,
+      DEFAULT,
+      { status: 'ready', data: payload(), error: null },
+      'rates',
+      { status: 'ready', data: ratesPayload(), error: null },
+      DEFAULT,
+      DEFAULT,
+      ['acme'],
+      { acme: { status: 'ready', models: [] } },
+      DEFAULT,
+      DEFAULT,
+      DEFAULT,
+      { id: 'my-vendor/my-model', input: '1', output: '', cacheRead: '', cacheWrite: '' },
+    )
+    const tree = expand(module.__section({ t: fakeT() }))
+    priming.length = 0
+    findButtons(findByClass(tree, 'tl-manual-form'), 'save')[0].props.onClick()
+    await new Promise((resolve) => setImmediate(resolve))
+    // A price edited inside an expanded group lives in that list and not in the
+    // published rows, so the save has to bring the open lists back.
+    assert.deepEqual(calls.map((call) => call.url), ['/api/token-ledger/rates', '/api/token-ledger/rates?vendor=acme'])
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
+
+test('an expanded list is read again when the host\'s catalogue moves', async () => {
+  const { module, reactEffects } = loadWithSection()
+  const calls = []
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (url) => {
+    calls.push(url)
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ vendor: 'acme', modelCount: 12, publishedCount: 2, models: [] }) })
+  }
+  /**
+   * Render the section with one vendor open and a list read under a catalogue.
+   *
+   * @param {number} stamp - the catalogue the open list was read under.
+   * @returns {void}
+   */
+  const renderWith = (stamp) => {
+    const priming = module.priming
+    priming.length = 0
+    const catalogue = ratesPayload().catalogue
+    priming.push(
+      DEFAULT,
+      DEFAULT,
+      { status: 'ready', data: payload(), error: null },
+      'rates',
+      { status: 'ready', data: ratesPayload({ catalogue: { ...catalogue, fetchedAt: 2 } }), error: null },
+      DEFAULT,
+      DEFAULT,
+      ['acme'],
+      { acme: { status: 'ready', models: [], stamp } },
+      DEFAULT,
+      DEFAULT,
+      DEFAULT,
+      { id: 'my-vendor/my-model', input: '1', output: '', cacheRead: '', cacheWrite: '' },
+    )
+    reactEffects.length = 0
+    expand(module.__section({ t: fakeT() }))
+    priming.length = 0
+  }
+  try {
+    // A list already under the catalogue that is on screen has nothing to catch
+    // up with, so it is left alone.
+    renderWith(2)
+    reactEffects[3]()
+    assert.deepEqual(calls, [], 'a list under the current catalogue is not read again')
+
+    // The host replaced its catalogue, so the list on screen is under the
+    // previous one and is read again rather than left showing old numbers.
+    renderWith(1)
+    reactEffects[3]()
+    assert.deepEqual(calls, ['/api/token-ledger/rates?vendor=acme'], 'a list under the previous catalogue is read again')
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
+
+/* ------------------------------------------------------------------- bill -- */
 /** The groupings the page stacks, in order. */
 const BILL_DIMS = ['workspace', 'session', 'model', 'vendor']
 

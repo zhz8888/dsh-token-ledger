@@ -31,10 +31,10 @@ If you only want a pretty chart, there are a dozen plugins for that. This one is
 for when you need to *defend* the number.
 
 The settings page has three tabs — **Overview** (the ledger, with what each period
-cost), **Rates** (a price list for each vendor's newest models, with the live
-USD/CNY rate) and **Bill** (the same usage turned into money — four groupings
-stacked over five periods each, exportable as CSV or JSON in one file) — and a CLI
-that works with no host running at all.
+cost), **Rates** (a price list for each vendor's models — the newest few by default,
+all of them on request — with the live USD/CNY rate) and **Bill** (the same usage
+turned into money — four groupings stacked over five periods each, exportable as CSV
+or JSON in one file) — and a CLI that works with no host running at all.
 
 ## Contents
 
@@ -192,8 +192,9 @@ follow the host's language.
 
 - **Overview** — the month's totals, today live, a usage calendar, and a per-model
   breakdown, with what each period cost.
-- **Rates** — the live USD/CNY rate and each vendor's published prices, every one
-  of them editable by hand for the times the network is not there.
+- **Rates** — the live USD/CNY rate and each vendor's published prices, every vendor
+  expandable to its full model list, every price editable by hand for the times the
+  network is not there.
 - **Bill** — the same usage as money: workspace, session, model and vendor
   stacked, each with its own period, one CSV or JSON export for all of it.
 

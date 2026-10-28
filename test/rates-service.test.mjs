@@ -403,3 +403,140 @@ test('switching source to the gateway changes both the URL and the parsing', asy
     cleanup()
   }
 })
+
+/* ------------------------------------------- the whole list of one provider -- */
+
+/** A model list whose one provider has more models than the quota publishes. */
+const MODELS_MANY = {
+  data: [
+    { id: 'acme/m5', name: 'Acme Five', created: 5000, context_length: 1000, pricing: { prompt: '0.0000005', completion: '0.000002' } },
+    { id: 'acme/m4', name: 'Acme Four', created: 4000, context_length: 1000, pricing: { prompt: '0.0000004', completion: '0.0000016' } },
+    { id: 'acme/m3', name: 'Acme Three', created: 3000, context_length: 1000, pricing: { prompt: '0.0000003', completion: '0.0000012' } },
+    { id: 'acme/m2', name: 'Acme Two', created: 2000, context_length: 1000, pricing: { prompt: '0.0000002', completion: '0.0000008' } },
+    { id: 'acme/m1', name: 'Acme One', created: 1000, context_length: 1000, pricing: { prompt: '0.0000001', completion: '0.0000004' } },
+  ],
+}
+
+/**
+ * DeepSeek's own pricing page, with four models priced for peak and off-peak.
+ *
+ * A vendor that charges by time of day is two rows for one model, so the page
+ * carries a table with a period column per model.
+ */
+const DEEPSEEK_PAGE = `
+<html><body>
+<table>
+  <tr><th>模型</th><th>deepseek-a</th><th>deepseek-b</th><th>deepseek-c</th><th>deepseek-d</th></tr>
+  <tr><td>模型版本</td><td>A</td><td>B</td><td>C</td><td>D</td></tr>
+  <tr><td>百万tokens输入 （缓存未命中）</td><td>空闲时段</td><td>1元</td><td>2元</td><td>3元</td><td>4元</td></tr>
+  <tr><td>高峰时段</td><td>2元</td><td>4元</td><td>6元</td><td>8元</td></tr>
+  <tr><td>百万tokens输出</td><td>空闲时段</td><td>4元</td><td>8元</td><td>12元</td><td>16元</td></tr>
+  <tr><td>高峰时段</td><td>8元</td><td>16元</td><td>24元</td><td>32元</td></tr>
+</table>
+</body></html>`
+
+/**
+ * A fetch stand-in that answers DeepSeek's own pricing page with its table.
+ *
+ * @param {object} [options] - the models list and the page's HTML.
+ * @returns {{ fetchImpl: typeof fetch }} the transport.
+ */
+function stubFetchWithVendorPage({ models = MODELS, page = DEEPSEEK_PAGE } = {}) {
+  return {
+    fetchImpl: async (url) => {
+      const target = String(url)
+      if (target.includes('api-docs.deepseek.com')) {
+        return { ok: true, status: 200, text: async () => page }
+      }
+      const payload = target.includes('rates') ? FX : models
+      return { ok: true, status: 200, text: async () => JSON.stringify(payload) }
+    },
+  }
+}
+
+test('the published payload stays small, and says what an expansion would show', async () => {
+  const { service, cleanup } = makeService({ models: MODELS_MANY })
+  try {
+    await service.refresh()
+    const view = service.read()
+    const acme = view.vendors.find((entry) => entry.vendor === 'acme')
+    // The whole list is not published with the table: this payload is also the
+    // price catalogue the bill and the overview price from.
+    assert.equal('allModels' in acme, false, 'the whole list is served on demand instead')
+    assert.equal(acme.models.length, 3, 'the table still shows the newest few')
+    assert.equal(acme.modelCount, 5, 'and the header still says how many models the provider has')
+    assert.equal(acme.expandable, true, 'so the page knows there is more to show')
+    assert.equal(acme.expandedCount, 5, 'and how much of it there is')
+  } finally {
+    cleanup()
+  }
+})
+
+test('a provider can be served its whole list, with the typed prices on top', async () => {
+  const { service, cleanup } = makeService({ models: MODELS_MANY })
+  try {
+    await service.refresh()
+    const full = service.readVendor('acme')
+    assert.equal(full.vendor, 'acme')
+    assert.equal(full.modelCount, 5, 'every priced model of the provider')
+    assert.equal(full.publishedCount, 3, 'three of them were already published')
+    assert.deepEqual(full.models.map((row) => row.id), ['acme/m5', 'acme/m4', 'acme/m3', 'acme/m2', 'acme/m1'])
+    assert.equal(full.models[0].source, 'fetched')
+    assert.equal(full.models[0].prices.input, 0.5, 'the fetched price, in USD per million')
+
+    // A typed price wins over the fetched one in the expanded list too.
+    service.saveOverrides({ models: { 'acme/m1': { input: 9 } } })
+    const typed = service.readVendor('acme')
+    assert.equal(typed.models[4].prices.input, 9)
+    assert.equal(typed.models[4].source, 'manual')
+    assert.equal(typed.models[0].prices.input, 0.5, 'and the fetched prices are left alone')
+
+    assert.equal(service.readVendor('nobody'), undefined, 'a provider the catalogue does not carry')
+    assert.equal(service.readVendor(''), undefined)
+  } finally {
+    cleanup()
+  }
+})
+
+test('the cached catalogue keeps the whole list, so an offline host can still expand', async () => {
+  const { service, path, cleanup } = makeService({ models: MODELS_MANY })
+  try {
+    await service.refresh()
+    const cached = JSON.parse(readFileSync(path, 'utf8'))
+    const acme = cached.catalogue.vendors.find((entry) => entry.vendor === 'acme')
+    assert.equal(acme.allModels.length, 5, 'the cache keeps what the expansion needs')
+
+    // A host that cannot reach the network reads the same list back.
+    const offline = createRatesService({ path, options: { fetchImpl: stubFetch({ failModels: true, failFx: true }).fetchImpl } })
+    assert.equal(offline.readVendor('acme').modelCount, 5)
+  } finally {
+    cleanup()
+  }
+})
+
+test('a provider priced by time of day expands into the same kind of row', async () => {
+  const { service, cleanup } = makeService({ fetchImpl: stubFetchWithVendorPage().fetchImpl })
+  try {
+    await service.refresh()
+    const view = service.read()
+    const deepseek = view.vendors.find((entry) => entry.vendor === 'deepseek')
+    assert.equal(deepseek.source, 'vendor', 'the price comes from the vendor’s own page')
+    // One model is two rows here, so the count of models is not the count of
+    // rows, and the expansion says how many rows it would show.
+    assert.equal(deepseek.modelCount, 4, 'four models')
+    assert.equal(deepseek.models.length, 6, 'but six published rows, two per model')
+    assert.equal(deepseek.expandable, true)
+    assert.equal(deepseek.expandedCount, 8, 'eight rows in all')
+
+    const full = service.readVendor('deepseek')
+    assert.equal(full.modelCount, 8)
+    assert.equal(full.publishedCount, 6)
+    assert.equal(full.models[0].id, 'deepseek/deepseek-a@peak', 'the same row shape as the published one')
+    assert.equal(full.models[0].period, 'peak')
+    assert.equal(full.models[0].periodLabel, 'peak')
+    assert.equal(full.models[1].period, 'offPeak')
+    assert.deepEqual(full.models[0].prices, { input: 2, output: 8, cacheRead: null, cacheWrite: null })
+  } finally {
+    cleanup()
+  }
+})

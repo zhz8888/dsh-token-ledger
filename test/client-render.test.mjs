@@ -513,6 +513,60 @@ test('an offline rates payload renders without a rate and without complaint', { 
   assert.equal(countClass(html, 'tl-manual-form'), 1)
 })
 
+test('a provider with more models carries an expander, and opening it shows the whole list', { skip }, () => {
+  const exports = loadClient()
+  const payload = ratesPayload()
+  const whole = [
+    ...payload.vendors[0].models,
+    { id: 'acme/pro', name: 'Acme Pro', vendor: 'acme', created: 150, contextLength: 64000, prices: { input: 1, output: 3, cacheRead: null, cacheWrite: null }, source: 'fetched' },
+  ]
+
+  const closed = renderComponent(exports.RatesView, { state: readyRates, onPatch: () => {} })
+  assert.deepEqual(closed.complaints, [], 'React reported a problem with the rendered tree')
+  assert.ok(closed.html.includes('aria-expanded="false"'), 'the list starts closed')
+  // Only the vendor with a catalogue behind it: the hand-entered group has
+  // nothing to expand.
+  assert.equal(countByClass(closed.html, 'tl-expand'), 1)
+
+  const open = renderComponent(exports.RatesView, {
+    state: readyRates,
+    onPatch: () => {},
+    expanded: ['acme'],
+    vendorModels: { acme: { status: 'ready', models: whole } },
+  })
+  assert.deepEqual(open.complaints, [], 'React reported a problem with the rendered tree')
+  assert.ok(open.html.includes('aria-expanded="true"'), 'the open list is reported as open')
+  assert.ok(open.html.includes('Acme Pro'), 'the model that only the whole list carries is on screen')
+  assert.ok(open.html.includes('Acme Flagship'), 'the published rows are still on screen')
+  // The marker is a triangle that points the way the list goes.
+  assert.ok(open.html.includes('▾'), 'the open list points down')
+  assert.ok(closed.html.includes('▸'), 'the closed list points right')
+})
+
+test('the group says what the expansion is doing, and keeps the published rows', { skip }, () => {
+  const exports = loadClient()
+  const loading = renderComponent(exports.RatesView, {
+    state: readyRates,
+    onPatch: () => {},
+    expanded: ['acme'],
+    vendorModels: { acme: { status: 'loading' } },
+  })
+  assert.deepEqual(loading.complaints, [])
+  assert.ok(loading.html.includes('expandingModels'), 'the group says the list is on its way')
+  assert.ok(loading.html.includes('Acme Flagship'), 'the published rows stay on screen')
+
+  const failed = renderComponent(exports.RatesView, {
+    state: readyRates,
+    onPatch: () => {},
+    expanded: ['acme'],
+    vendorModels: { acme: { status: 'error', error: 'HTTP 404' } },
+  })
+  assert.deepEqual(failed.complaints, [])
+  assert.ok(failed.html.includes('expandFailed'), 'the group says the expansion failed')
+  assert.ok(failed.html.includes('HTTP 404'), 'and says why')
+  assert.ok(failed.html.includes('Acme Flagship'), 'the published rows stay on screen')
+})
+
 /* ------------------------------------------------------------------- bill -- */
 
 /** The groupings the bill stacks, in page order. */
