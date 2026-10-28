@@ -28,6 +28,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # pnpm is this project's package manager. The action takes the version from
+      # the `packageManager` field in package.json, so there is one place to
+      # change it and the workflow cannot drift away from it.
+      - uses: pnpm/action-setup@v6
+
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
@@ -39,17 +44,17 @@ jobs:
       # they exist only so the browser half can be rendered and asserted against
       # the real library and the real registry. They are never installed for a
       # consumer of this package: it ships with no dependencies, no peer
-      # dependencies and no install scripts. `npm ci` rather than `npm install` so
-      # the committed lockfile is enforced — it is what pins the slot registry to
-      # the build the host actually ships, instead of letting the range float.
-      - name: Install test-only React
-        run: npm ci --no-audit --no-fund
+      # dependencies and no install scripts. `--frozen-lockfile` rather than a
+      # plain install, so the committed lockfile is enforced instead of being
+      # quietly re-resolved.
+      - name: Install the test-only dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Test
-        run: npm test
+        run: pnpm test
 
       - name: Verify packaging invariants
-        run: npm run verify
+        run: pnpm run verify
 
   package:
     name: published contents

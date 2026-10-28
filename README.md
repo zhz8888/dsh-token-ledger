@@ -497,7 +497,7 @@ inferred:
 | **Install** | No `preinstall`, `install`, `postinstall` or `prepare` script; no runtime dependencies; no native binaries; no symlinks or submodules; and no `@deepseek-ai/*` component is disabled, replaced or duplicated. |
 
 Every claim above can be checked against the fixed commit — the imports, the URLs and the
-state directory are all in `lib/`, and `npm run verify` asserts the packaging invariants
+state directory are all in `lib/`, and `pnpm run verify` asserts the packaging invariants
 that keep the install side true.
 
 ## Compatibility
@@ -529,15 +529,18 @@ The ledger file is left alone on purpose — delete
 
 ## Development
 
+This project is developed with pnpm, pinned by the `packageManager` field in
+`package.json`. The published package itself carries no dependencies.
+
 ```bash
-npm install         # devDependencies only: react, react-dom, and the slot registry DSH runs
-npm test            # 297 tests in 14 files
-npm run verify      # packaging invariants (dependency-free, no install scripts, no bare imports)
+pnpm install         # devDependencies only: react, react-dom, and the slot registry DSH runs
+pnpm test            # 297 tests in 14 files
+pnpm run verify      # packaging invariants (dependency-free, no install scripts, no bare imports)
 ```
 
-`npm test` uses Node's built-in test runner. In a restricted environment where
+`pnpm test` uses Node's built-in test runner. In a restricted environment where
 spawning a child process per test file is blocked, use
-`npm run test:single-process`.
+`pnpm run test:single-process`.
 
 **What a change needs to take effect.** Both halves are read when the plugin mounts,
 so editing `lib/index.js` *or* `lib/client.js` needs a DSH restart (or a plugin
@@ -556,7 +559,7 @@ so the browser half can be checked against the real thing — React renders it, 
 a hook-order or DOM-prop mistake fails instead of passing silently, and
 `@deepseek-ai/dsh-client-ui-slots` validates the registration against the very
 registry that DSH runs. Without them installed the affected tests skip with a
-stated reason, so `npm test` still works from a fresh clone with no network.
+stated reason, so `pnpm test` still works from a fresh clone with no network.
 
 See [docs/VERIFICATION.md](docs/VERIFICATION.md) for what was actually verified
 and how, including the evidence behind the fork rule.

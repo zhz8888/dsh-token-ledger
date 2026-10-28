@@ -409,7 +409,7 @@ false` 关闭启动时的磁盘折叠；`backfill: false` 则两个都关，账�
 | **安装** | 没有 `preinstall`、`install`、`postinstall` 或 `prepare` 脚本；无运行时依赖；无原生二进制；无符号链接与子模块；不禁用、不替换、不重复安装任何 `@deepseek-ai/*` 官方组件。 |
 
 以上每一条都可以对着固定 Commit 核对——import、URL 与状态目录都在 `lib/` 里，
-而保证"安装侧"成立的那些打包不变式由 `npm run verify` 断言。
+而保证"安装侧"成立的那些打包不变式由 `pnpm run verify` 断言。
 
 ## 兼容性
 
@@ -435,21 +435,24 @@ dsh plugin --profile web remove @chenmiao8563/dsh-token-ledger
 
 ## 开发
 
+本项目用 pnpm 开发，版本由 `package.json` 的 `packageManager` 字段钉住；
+发布出去的包本身不带任何依赖。
+
 ```bash
-npm install         # 两个 devDependency：react 与 react-dom，供渲染测试使用
-npm test            # 297 个测试，14 个文件
-npm run verify      # 打包不变式（零依赖、无安装脚本、无裸模块说明符）
+pnpm install         # devDependency 只有三个：react、react-dom，以及 DSH 跑的那个槽位注册表
+pnpm test            # 297 个测试，14 个文件
+pnpm run verify      # 打包不变式（零依赖、无安装脚本、无裸模块说明符）
 ```
 
-`npm test` 使用 Node 内置测试运行器。在禁止逐文件 spawn 子进程的受限环境里，
-改用 `npm run test:single-process`。
+`pnpm test` 使用 Node 内置测试运行器。在禁止逐文件 spawn 子进程的受限环境里，
+改用 `pnpm run test:single-process`。
 
 React **只是 devDependency**，消费者永远不会安装它：本包不带任何运行时依赖、不带任何
 安装脚本，声明的 peer 全是可选声明、没有任何东西会去抓取，而 pnpm 不会为依赖安装其
 devDependencies。它在这里的作用是让
 浏览器端能用**真库**渲染并断言——这能抓到替身抓不到的东西：hook 顺序违规与非法
 DOM 属性，React 会报出来，而手写的 `createElement` 会默默接受。没装它时这些渲染
-测试会带明确原因**跳过而不是失败**，所以全新克隆、无网络也能跑 `npm test`。
+测试会带明确原因**跳过而不是失败**，所以全新克隆、无网络也能跑 `pnpm test`。
 
 **改动的生效方式。** 两半都是在插件**挂载时**读取的，所以改 `lib/index.js` **或**
 `lib/client.js` 都需要重启 DSH（或重载插件）——刷新页面不够，因为 bundle 的 `rev`

@@ -970,6 +970,47 @@ the rates tab or the bill, and the checklists in the sections above were not re-
 0.2.1-rc.3. What is claimed for 0.2.1-rc.3 is that the host mounts the plugin and it still
 produces a ledger — not that every view was looked at again.
 
+## The package manager migration, 2026-10-28 — npm to pnpm
+
+| Item | Value |
+| --- | --- |
+| Date | 2026-10-28 |
+| OS | Windows (win32) |
+| Node.js | v24.15.0 |
+| pnpm | 11.20.0 |
+| DSH | 0.2.1-rc.3 (the same desktop build as the section above) |
+
+- **`pnpm-lock.yaml` replaces `package-lock.json`**, and `package.json` carries
+  `packageManager: pnpm@11.20.0` so the version is declared once. This is the package
+  manager the ecosystem already uses: DSH installs plugins with pnpm.
+- **`pnpm test` — 297 tests in 14 files, all passing**, and **`pnpm run verify` — all 81
+  checks passing.** This is the default test runner, with Node's per-file process
+  isolation, which the npm runs in this environment could not use; the earlier entries
+  here had to fall back to `test:single-process` for that reason.
+- **The installed tree is smaller than npm's, and that is the point.** npm installed nine
+  packages: react, react-dom, the slot registry, and — because npm auto-installs a
+  *required* peer — `@deepseek-ai/cordis` with its own chain (`cosmokit`,
+  `@standard-schema/spec`). pnpm installs six: react, react-dom, the slot registry, and
+  react's own three. The cordis chain is gone because the slot registry declares cordis
+  as a peer and nothing in this repository needs it: the host provides cordis at run time.
+- **The optional host peers stay out of the tree, but not by default.** With pnpm's
+  defaults they do not stay out: `autoInstallPeers` is `true`, and pnpm resolved the five
+  optional `@deepseek-ai/dsh-*` peers into real dependencies at `0.2.0-rc.2` — a second
+  copy of the DSH harness, twenty-odd packages, the exact thing this plugin is built to
+  avoid. `autoInstallPeers` and `dedupePeerDependents` are `false` in
+  `pnpm-workspace.yaml`, and the tree is back to what it should be.
+- **No dependency ships a build script.** pnpm 11 blocks dependency build scripts and
+  fails the install on one nobody has ruled on; every dependency is listed explicitly in
+  `allowBuilds`, all of them `false`, so the list is a set of denials rather than a
+  blanket allow.
+- **The publish path is untouched.** `npm publish`, `npm pack` and `npm view` are still
+  npm: the tarball that reaches the registry and the OIDC exchange that puts it there are
+  npm's own, and this workflow has already been bitten by that step once.
+
+**Not verified this round:** the GitHub Actions workflows. `pnpm/action-setup@v6`, the
+frozen install, and the two workflow files are written, but nothing here has executed them
+on a runner; the first CI run on a push is what will actually tell.
+
 ## Not verified
 
 Stated plainly, because a verification file that only lists successes is not

@@ -27,11 +27,23 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # pnpm is this project's package manager. The action takes the version from
+      # the `packageManager` field in package.json, so there is one place to
+      # change it and the workflow cannot drift away from it.
+      - uses: pnpm/action-setup@v6
+
       # No dependency cache on purpose: a release build should not be able to
       # resolve anything stale. The only dependencies are the three test-only
       # packages (react, react-dom, the slot registry), and the package itself
-      # ships with none. `npm ci` installs from the committed lockfile, so the
-      # build is reproducible rather than whatever the ranges currently resolve to.
+      # ships with none. `--frozen-lockfile` installs from the committed
+      # lockfile, so the build is reproducible rather than whatever the ranges
+      # currently resolve to.
+      #
+      # The publish step further down stays on npm, and that is not an oversight.
+      # The tarball that reaches the registry and the OIDC exchange that puts it
+      # there are npm's own, and this workflow has already been bitten by that
+      # step once. pnpm is how this project installs its dependencies; npm is how
+      # it publishes to the npm registry.
       #
       # Node 24, not 22: trusted publishing needs npm >= 11.5.1, and the npm
       # bundled with Node 22 is npm 10, which cannot do the OIDC exchange at
@@ -53,14 +65,14 @@ jobs:
           node-version: '24'
           package-manager-cache: false
 
-      - name: Install test-only React
-        run: npm ci --no-audit --no-fund
+      - name: Install the test-only dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Test
-        run: npm test
+        run: pnpm test
 
       - name: Verify packaging invariants
-        run: npm run verify
+        run: pnpm run verify
 
       - name: Read the version
         id: version

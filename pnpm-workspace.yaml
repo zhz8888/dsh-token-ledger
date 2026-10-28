@@ -1,0 +1,41 @@
+# pnpm 11 reads a project's settings from this file.
+#
+# `autoInstallPeers` is off on purpose. This package declares five optional peers
+# - the DSH host packages the two halves bind to - and they are declared so the
+# host can be checked against them, not so they can be installed. A DSH harness
+# that a version drift drags in would be a second copy of the host, in the
+# profile, next to the one already running, which is the one thing this plugin is
+# built to avoid. npm does not install an optional peer either, so this keeps the
+# tree the shape npm left it in. `dedupePeerDependents` goes with it for the same
+# reason: it is the other half of pnpm's optional-peer resolution.
+autoInstallPeers: false
+dedupePeerDependents: false
+
+# Those peers are supplied by the host at run time, so their absence here is the
+# intended state and not something to warn about on every install.
+peerDependencyRules:
+  ignoreMissing:
+    - '@deepseek-ai/cordis'
+    - '@deepseek-ai/dsh-*'
+
+# `allowBuilds` is the build-script allowlist, and `strictDepBuilds` (the default
+# in pnpm 11) makes an install fail with ERR_PNPM_IGNORED_BUILDS when it reaches
+# a dependency whose build script nobody has ruled on. Every dependency this
+# project has is listed explicitly, so the failure mode is a reviewed decision
+# rather than a silent skip or a blanket allow:
+#
+#   true  - the build has to run for the package to work
+#   false - there is nothing to build, and the entry is a denial that keeps it
+#           that way if a later release of that package adds a build script
+#
+# None of these ship a build script. That is the point of the list: the next
+# dependency that does will have to be added here on purpose, and cannot
+# smuggle itself in through a range bump.
+allowBuilds:
+  '@deepseek-ai/dsh-client-ui-slots': false
+  '@standard-schema/spec': false
+  js-tokens: false
+  loose-envify: false
+  react: false
+  react-dom: false
+  scheduler: false

@@ -2,6 +2,9 @@ node_modules/
 *.log
 *.tgz
 
+# pnpm's content-addressable store, when a local one is used.
+.pnpm-store/
+
 # Local ledgers and exports produced while developing against a real DSH home.
 token-ledger/
 .ledger-local/

@@ -8,15 +8,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The package manager is pnpm.** `package-lock.json` is gone, `pnpm-lock.yaml` replaces it,
+  and `package.json` carries `packageManager: pnpm@11.20.0` so the version is declared once
+  and the workflows read it from there. This is the package manager the DSH ecosystem already
+  uses: DSH installs plugins with pnpm, and the README has said so since the plugin's first
+  release.
+
+  Two pnpm defaults had to be turned off, and both would have broken the plugin's central
+  promise that nothing is installed for a consumer. pnpm's `autoInstallPeers` is `true` by
+  default, and it resolves the *optional* peers this package declares — the five DSH host
+  packages the two halves bind to — into real dependencies, at `0.2.0-rc.2`, dragging a
+  second copy of the whole DSH harness into the tree: twenty-odd extra packages, a harness the
+  plugin is explicitly built not to duplicate. `autoInstallPeers` and `dedupePeerDependents`
+  are now `false` in `pnpm-workspace.yaml`, and the tree is back to three packages: react,
+  react-dom, and the slot registry. npm never installed an optional peer either, so this
+  keeps the shape npm left it in.
+
+  pnpm 11 also blocks dependency build scripts by default and fails the install on one nobody
+  has ruled on. Every dependency is listed explicitly in `allowBuilds`, all of them `false`:
+  none of them ships a build script, and the entry is a denial that keeps it that way if a
+  later release of that package adds one. The next dependency that needs a build will have
+  to be added here on purpose.
+
 - **The slot-registry devDependency is now the build the plugin actually runs under:
-  `@deepseek-ai/dsh-client-ui-slots` `^0.2.0-rc.2` → `^0.2.1-rc.3`.** It exists only so the
-  client-half registration tests run against the real registry instead of a stub, and
-  `0.2.1-rc.3` is the build the `0.2.1-rc.3` harness ships. The lockfile pins that exact
-  version rather than the newest release the range allows, so CI exercises the registry the
-  host loads and not merely a newer one that happens to resolve. Its own `@deepseek-ai/cordis`
-  peer moved `~4.0.4` → `~4.0.5` with it, which brings `cordis` 4.0.4 → 4.0.5 and
-  `@deepseek-ai/cosmokit` 1.8.5 → 1.8.6 into the install. None of this is published: the
-  package still ships with no dependencies and no peers to install.
+  `@deepseek-ai/dsh-client-ui-slots` `^0.2.0-rc.2` → `0.2.1-rc.3`, pinned exactly.** It exists
+  only so the client-half registration tests run against the real registry instead of a stub,
+  and `0.2.1-rc.3` is the build the `0.2.1-rc.3` harness ships. The pin is exact rather than a
+  caret on purpose: a caret resolves to the newest release the range admits, and npm and pnpm
+  disagree about which that is for a prerelease range — npm kept `0.2.1-rc.3` from the lock,
+  pnpm resolved `0.2.1-rc.4` on a fresh lock. An exact specifier is the same under both, and
+  it is what the test's own comment already claimed. Its `@deepseek-ai/cordis` peer moved
+  `~4.0.4` → `~4.0.5` with it, which brings `cordis` 4.0.5 and `@deepseek-ai/cosmokit` 1.8.6
+  into the install under npm. None of this is published: the package still ships with no
+  dependencies and no peers to install.
 
 - **`dsh.compatibility.dshReleases` also declares `0.2.1-rc.3` compatible.** The matrix names
   only releases that have actually been checked, and this one is the harness the plugin is
@@ -24,16 +48,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `ctx.inject`, `ctx.get`, `ctx.effect`, `commands.register`,
   `sessionPersistence.list()/inspect()` and `settings.section` surface the `0.2.0` line did.
 
-- **CI and Release install with `npm ci`, so the committed lockfile is enforced.** Both
-  workflows ran `npm install`, which quietly re-resolves anything the lock and the manifest
-  disagree on and would happily take a newer release the range admits. `npm ci` fails instead,
-  which is what makes the pin above mean something. Both workflows also move to
-  `actions/checkout@v7` and `actions/setup-node@v7`; `checkout@v7`'s one behavioral change
-  blocks checking out fork PRs under `pull_request_target` / `workflow_run`, neither of which
-  these workflows use, and `setup-node@v7` still takes the `package-manager-cache: false` the
-  release job depends on.
+- **CI and Release install with `pnpm install --frozen-lockfile`, so the committed lockfile is
+  enforced.** Both workflows ran `npm install`, which quietly re-resolves anything the lock and
+  the manifest disagree on and would happily take a newer release the range admits. A frozen
+  install fails instead, which is what makes the pin above mean something. Both workflows also
+  move to `actions/checkout@v7` and `actions/setup-node@v7`, and to `pnpm/action-setup@v6`,
+  which takes the pnpm version from the `packageManager` field rather than repeating it.
+  `checkout@v7`'s one behavioral change blocks checking out fork PRs under
+  `pull_request_target` / `workflow_run`, neither of which these workflows use, and
+  `setup-node@v7` still takes the `package-manager-cache: false` the release job depends on.
 
 ### Not changed, on purpose
+
+- **The publish path stays on npm.** `npm publish`, `npm pack` and `npm view` are still npm,
+  in the Release workflow and in the job that asserts the tarball. The tarball that reaches
+  the registry and the OIDC exchange that puts it there are npm's own, and this workflow has
+  already been bitten by that step once — every release from v0.5.0 to v0.8.0 failed on it.
+  pnpm is how this project installs its dependencies; npm is how it publishes to the npm
+  registry. Nothing a consumer installs changes: the published package still carries no
+  dependencies, no peers to install, and no install scripts.
 
 - **`react` and `react-dom` stay at `18.3.1`.** They are dev-only — installed so the browser
   half can be rendered and asserted under the real library — and `18.3.1` is the React major
@@ -53,10 +86,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Verified
 
 - 297 tests in 14 files and 81 packaging checks, both passing, under Node v24.15.0, with
-  `npm ci` reproducing the installed tree from the committed lockfile. The suite is a Node
-  run, not an in-app run; the host evidence for `0.2.1-rc.3` is the plugin's own runtime
-  output — the settings routes registered and `ledger.json` still being written — not a
-  re-run of the full in-app checklist in [`docs/VERIFICATION.md`](docs/VERIFICATION.md).
+  `pnpm install --frozen-lockfile` reproducing the installed tree from the committed
+  lockfile. The suite is a Node run, not an in-app run; the host evidence for `0.2.1-rc.3` is
+  the plugin's own runtime output — the settings routes registered and `ledger.json` still
+  being written — not a re-run of the full in-app checklist in
+  [`docs/VERIFICATION.md`](docs/VERIFICATION.md).
 
 ## [1.1.2] - 2026-09-30
 
