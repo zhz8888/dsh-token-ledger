@@ -933,13 +933,51 @@ note under the table). It is asserted in markup and in the real-React render tes
 browser was available to look at it, and the geometry it sits in cannot be measured here
 either.
 
+## The dependency upgrade, 2026-10-28 — checked on a 0.2.1-rc.3 host
+
+The devDependency moved to the build the host ships; nothing under `lib/`, `bin/` or `test/`
+was touched. What it was checked against:
+
+| Item | Value |
+| --- | --- |
+| Date | 2026-10-28 |
+| OS | Windows (win32) |
+| Node.js | v24.15.0 |
+| DSH | **0.2.1-rc.3** (packaged desktop build) |
+| Host profile under test | the author's own `desktop` profile, not a disposable one |
+
+- **The host version is read out of the installation, not assumed.** `desktop-runtime.json`
+  inside `app.asar` reports `dshVersion: 0.2.1-rc.3`; every `@deepseek-ai/dsh*` entry in its
+  `sharedPackages` list is `0.2.1-rc.3`; and that day's `run.start` log line records
+  `"dsh":"0.2.1-rc.3"`. The React entries in the same list are `18.3.1`, which is why
+  `react`/`react-dom` are held there rather than moved to 19.
+- **The plugin is mounted on that host, not merely installable.** `~/.dsh/logs` carries
+  `[token-ledger] settings page routes ready at /api/token-ledger/...`, and
+  `~/.dsh/token-ledger/ledger.json` is being written — 5,400-plus calls, modified minutes
+  before this section was written.
+- **`npm ci` from the committed lockfile** installs `@deepseek-ai/dsh-client-ui-slots`
+  0.2.1-rc.3, `@deepseek-ai/cordis` 4.0.5 and `@deepseek-ai/cosmokit` 1.8.6, and the three
+  `integrity` values were re-read from the registry and match the lock exactly.
+- **`npm run test:single-process` — 297 tests in 14 files, all passing**; **`npm run verify`
+  — all 81 checks passing.** The registration tests now run against the 0.2.1-rc.3 slot
+  registry rather than the 0.2.0-rc.2 one.
+- **The CLI against the real home:** `summary --home ~/.dsh` reports the live ledger (5,425
+  calls at the time of the run), so the packaged entry point still resolves its own modules
+  after the dependency move.
+
+**Not verified this round:** the screens. No browser pass was made over the settings section,
+the rates tab or the bill, and the checklists in the sections above were not re-run on
+0.2.1-rc.3. What is claimed for 0.2.1-rc.3 is that the host mounts the plugin and it still
+produces a ledger — not that every view was looked at again.
+
 ## Not verified
 
 Stated plainly, because a verification file that only lists successes is not
 useful:
 
-- **Any DSH release other than `0.1.2-rc.1`.** The API surface used is stable
-  across the `0.1.2` line by inspection, not by test.
+- **DSH releases other than `0.1.2-rc.1`, and the `0.2.1-rc.3` mount recorded above.** The API
+  surface used is stable across those lines by inspection, not by test; `0.2.1-rc.3` is
+  covered only to the extent the section above describes.
 - **Non-Windows platforms.** The logic is platform-independent and CI runs
   Linux, macOS and Windows jobs, but all manual verification above was on
   Windows.

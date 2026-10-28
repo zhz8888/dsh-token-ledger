@@ -100,7 +100,7 @@ dsh --profile web --dump-config | grep token-ledger
 
 ### 需要的 DSH 版本
 
-**DSH `^0.2.0-rc.1`** —— 当前实测针对的是 0.2.0-rc.2；区间下界写成 `0.2.0-rc.1`，
+**DSH `^0.2.0-rc.1`** —— 当前实测针对的是 0.2.1-rc.3；区间下界写成 `0.2.0-rc.1`，
 是因为这个生态用 rc 段来拼预发布版本区间。`^` 把上界放在 `0.3.0`。
 
 这个区间是有实际约束力的，不是装饰：DSH 在启动时会拿它与正在运行的宿主比对，
@@ -415,12 +415,12 @@ false` 关闭启动时的磁盘折叠；`backfill: false` 则两个都关，账�
 
 - **Node：** ≥ 22.15.0（CLI 需要解码 Zstandard 帧）。宿主端本身没有版本相关要求。
 - **DSH：** `^0.2.0-rc.1`，以对五个宿主包的可选 peer 形式声明——见
-  [需要的 DSH 版本](#需要的-dsh-版本)。已对照 `0.2.0-rc.2` 核过：DSH 自带的兼容性判定
+  [需要的 DSH 版本](#需要的-dsh-版本)。已对照 `0.2.1-rc.3` 核过：DSH 自带的兼容性判定
   接受本清单，且两半用到的每个接口——`ctx.on`、`ctx.inject`、`ctx.get`、`ctx.effect`、
   `commands.register`、`sessionPersistence.list()/inspect()`，以及 `settings.section`
-  槽位配合 `ctx.slots.inject`/`ctx.slots.register`——在 `0.2.0` 线上形状未变。
+  槽位配合 `ctx.slots.inject`/`ctx.slots.register`——在 `0.2` 线上形状未变。
   [`docs/VERIFICATION.md`](docs/VERIFICATION.md) 记录的是上一次完整的应用内实测，
-  那一次跑在 `0.1.2-rc.1` 上。
+  那一次跑在 `0.1.2-rc.1` 上；对照 `0.2.1-rc.3` 挂载的那一次单列在同一文件里。
 - **Profile：** 任意。没有 profile 相关代码。
 - **网络：** 费率页会通过 HTTPS 取价格与美元汇率，但这完全是可选的：没有外网时仍然
   提供本机缓存的上次结果，手动填写的值照常可用，`rates: false` 则连请求都省掉。

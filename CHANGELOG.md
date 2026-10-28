@@ -4,6 +4,60 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **The slot-registry devDependency is now the build the plugin actually runs under:
+  `@deepseek-ai/dsh-client-ui-slots` `^0.2.0-rc.2` → `^0.2.1-rc.3`.** It exists only so the
+  client-half registration tests run against the real registry instead of a stub, and
+  `0.2.1-rc.3` is the build the `0.2.1-rc.3` harness ships. The lockfile pins that exact
+  version rather than the newest release the range allows, so CI exercises the registry the
+  host loads and not merely a newer one that happens to resolve. Its own `@deepseek-ai/cordis`
+  peer moved `~4.0.4` → `~4.0.5` with it, which brings `cordis` 4.0.4 → 4.0.5 and
+  `@deepseek-ai/cosmokit` 1.8.5 → 1.8.6 into the install. None of this is published: the
+  package still ships with no dependencies and no peers to install.
+
+- **`dsh.compatibility.dshReleases` also declares `0.2.1-rc.3` compatible.** The matrix names
+  only releases that have actually been checked, and this one is the harness the plugin is
+  presently mounted in and writing a ledger from. The `0.2.1` line carries the same `ctx.on`,
+  `ctx.inject`, `ctx.get`, `ctx.effect`, `commands.register`,
+  `sessionPersistence.list()/inspect()` and `settings.section` surface the `0.2.0` line did.
+
+- **CI and Release install with `npm ci`, so the committed lockfile is enforced.** Both
+  workflows ran `npm install`, which quietly re-resolves anything the lock and the manifest
+  disagree on and would happily take a newer release the range admits. `npm ci` fails instead,
+  which is what makes the pin above mean something. Both workflows also move to
+  `actions/checkout@v7` and `actions/setup-node@v7`; `checkout@v7`'s one behavioral change
+  blocks checking out fork PRs under `pull_request_target` / `workflow_run`, neither of which
+  these workflows use, and `setup-node@v7` still takes the `package-manager-cache: false` the
+  release job depends on.
+
+### Not changed, on purpose
+
+- **`react` and `react-dom` stay at `18.3.1`.** They are dev-only — installed so the browser
+  half can be rendered and asserted under the real library — and `18.3.1` is the React major
+  the host bundles, confirmed in three places: `node_modules/react/package.json` inside
+  `app.asar`, the host's `desktop-runtime.json` shared-package list, and the served web bundle,
+  whose client-module seed table is what binds a plugin's `require("react")` to that instance.
+  React 19 would hand the tests a different React than the one the component renders under at
+  runtime, which is a green suite proving nothing.
+- **`engines.dsh` and the five host peers stay at `^0.2.0-rc.1`.** Plain semver would already
+  reject `0.2.1-rc.3` here — the prerelease-tuple rule — but DSH evaluates ranges with
+  `includePrerelease: true` (`dsh-app-boot`'s `satisfies`, `dshmarket`'s `satisfiesRange`), and
+  `engines.dsh` is the only gate evaluated at mount when it is present. So the wide floor keeps
+  the plugin installable on every `0.2.x` harness, and the running host is the proof: this
+  plugin is mounted on `0.2.1-rc.3` and writing a ledger from it this minute. Raising the floor
+  to `^0.2.1-rc.3` would only lock out `0.2.0-rc.x` users for no behavior change.
+
+### Verified
+
+- 297 tests in 14 files and 81 packaging checks, both passing, under Node v24.15.0, with
+  `npm ci` reproducing the installed tree from the committed lockfile. The suite is a Node
+  run, not an in-app run; the host evidence for `0.2.1-rc.3` is the plugin's own runtime
+  output — the settings routes registered and `ledger.json` still being written — not a
+  re-run of the full in-app checklist in [`docs/VERIFICATION.md`](docs/VERIFICATION.md).
+
 ## [1.1.2] - 2026-09-30
 
 ### Changed
@@ -867,7 +921,7 @@ so both now have regression tests.
 - Zero runtime dependencies, zero peer dependencies and no install scripts, so
   the package installs without a build step.
 
-[Unreleased]: https://github.com/chenmiao8563/dsh-token-ledger/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/chenmiao8563/dsh-token-ledger/compare/v1.1.2...HEAD
 [1.0.0]: https://github.com/chenmiao8563/dsh-token-ledger/compare/v0.8.0...v1.0.0
 [0.8.0]: https://github.com/chenmiao8563/dsh-token-ledger/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/chenmiao8563/dsh-token-ledger/compare/v0.7.1...v0.7.2
