@@ -51,6 +51,15 @@ the host's locale service, so they follow the host's language.
   cannot stand behind. A price the vendor does not publish is a dash, which is a
   different claim from "free", and a published `0` is flagged as *not necessarily
   free* because some platforms bill by the hour and publish no per-token price.
+- **A model the source marks as retired does not take a slot, and keeps its
+  price.** The price list marks the models a vendor no longer sells — `gpt-4-turbo`,
+  `MiniMax-M2.7`, half of Qwen's list — and they do not take one of the vendor's
+  slots, because otherwise DeepSeek's "newest three" are two retired models and
+  MiniMax's eight are six. They **keep their price**, because that is what the
+  calls that were made were billed at, and the row says it is retired. A model
+  the source lists under two names — `gemini-flash-latest` beside
+  `gemini-3.7-flash`, at the same price and released the same day — counts once,
+  or one model would take two of the few slots a vendor has.
 - **Every vendor can be expanded to all of its models.** The table lists each vendor's
   newest two or three by default, and the number beside the vendor's name is how many
   models it has in all. The ▸ at the right of the vendor's header expands that group to
@@ -113,6 +122,11 @@ workspace, session, model, vendor — rather than put behind a tab, because the
 question a bill answers is usually comparative, and **each section carries its own
 period**, so this month by workspace can sit above today by model.
 
+- **The bill prices from the whole catalogue, not from the rows the table shows.**
+  The price list publishes each vendor's newest few models, but the ledger
+  records the models you actually called — a call to `gpt-4o` or `MiniMax-M2.7`
+  is priced from the catalogue like any other rather than left unpriced. A
+  retired model is in that catalogue too, at the price it was billed at.
 - **What each row shows**: the group, **the cost** (`Cost`), cache-read input
   (`Cache read`), the input that missed the cache (`Uncached input`), output, the cache hit
   rate, and the call count. The two input columns are separate because they are priced

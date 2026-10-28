@@ -181,6 +181,113 @@ test('a publisher alias is never published as a vendor', () => {
   assert.equal(parsed.selected, 1)
 })
 
+test('a retired model does not take a vendor’s slot, and keeps its price', () => {
+  // The source marks a model the vendor has retired with `status: "deprecated"`.
+  // It is not what is on sale, but it is what the calls that were made were
+  // billed at, so it keeps its price and it is marked.
+  const payload = {
+    deepseek: {
+      models: {
+        'deepseek-v4-pro': { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', release_date: '2026-08-13', cost: { input: 0.66, output: 1.98 } },
+        'deepseek-v4-flash': { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', release_date: '2026-10-17', status: 'deprecated', cost: { input: 0.15, output: 0.6 } },
+        'deepseek-flash': { id: 'deepseek-flash', name: 'DeepSeek Flash', release_date: '2026-10-17', cost: { input: 0.15, output: 0.6 } },
+      },
+    },
+  }
+  const parsed = parseModelsDev(payload, { vendorLimit: 0, perVendor: 2 })
+  const deepseek = parsed.vendors.find((entry) => entry.vendor === 'deepseek')
+  assert.deepEqual(
+    deepseek.models.map((entry) => entry.id),
+    ['deepseek/deepseek-flash', 'deepseek/deepseek-v4-pro'],
+    'the two models that are on sale take the slots, and the newest retired one does not',
+  )
+  assert.equal(deepseek.modelCount, 3, 'the retired model is still one of the provider’s models')
+  const retired = deepseek.allModels.find((entry) => entry.id === 'deepseek/deepseek-v4-flash')
+  assert.equal(retired.retired, true, 'and it is marked as retired')
+  assert.equal(retired.prices.input, 0.15, 'it keeps the price it was billed at')
+  const live = deepseek.allModels.find((entry) => entry.id === 'deepseek/deepseek-flash')
+  assert.equal(live.retired, false)
+})
+
+test('a pointer to a model the vendor also lists is not a second model', () => {
+  // `gemini-flash-latest` is the same model as `gemini-3.7-flash`, at the same
+  // price and released the same day: publishing both spends one of the vendor’s
+  // slots on one model twice. A `-latest` id with no such twin is the only
+  // listing of that model, and is kept.
+  const payload = {
+    google: {
+      models: {
+        'gemini-3.7-flash': { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash', release_date: '2026-08-13', cost: { input: 0.75, output: 3.75 } },
+        'gemini-flash-latest': { id: 'gemini-flash-latest', name: 'Gemini Flash Latest', release_date: '2026-08-13', cost: { input: 0.75, output: 3.75 } },
+        'gemini-daybreak-latest': { id: 'gemini-daybreak-latest', name: 'Gemini Daybreak Latest', release_date: '2026-09-01', cost: { input: 4, output: 20 } },
+      },
+    },
+  }
+  const parsed = parseModelsDev(payload, { vendorLimit: 0, perVendor: 3 })
+  const google = parsed.vendors.find((entry) => entry.vendor === 'google')
+  assert.deepEqual(
+    google.models.map((entry) => entry.id),
+    ['google/gemini-daybreak-latest', 'google/gemini-3.7-flash'],
+    'the pointer that duplicates a listed model is gone, the one that does not is kept',
+  )
+  assert.equal(google.modelCount, 2)
+})
+
+test('another vendor’s model family is told from the vendor’s own', () => {
+  // Z.ai’s models are all called `glm-*`, so a row that says GLM names Z.ai
+  // however the vendor is spelled. Without that, ByteDance’s group leads with
+  // Z.ai’s model — the thing the hosted check exists to prevent.
+  const payload = {
+    volcengine: {
+      models: {
+        'glm-5-3-flash-260828': { id: 'glm-5-3-flash-260828', name: 'GLM-5.3 Flash', release_date: '2026-08-26', cost: { input: 0.12, output: 0.42 } },
+        'doubao-seed-2-1-pro': { id: 'doubao-seed-2-1-pro', name: 'Doubao Seed 2.1 Pro', release_date: '2026-06-23', cost: { input: 0.89, output: 4.45 } },
+      },
+    },
+  }
+  const parsed = parseModelsDev(payload, { vendorLimit: 0, perVendor: 1 })
+  const bytedance = parsed.vendors.find((entry) => entry.vendor === 'bytedance')
+  assert.equal(bytedance.models[0].id, 'bytedance/doubao-seed-2-1-pro', 'ByteDance’s own model takes the slot')
+  assert.equal(bytedance.modelCount, 2, 'and the hosted one is still in the list')
+})
+
+test('Tencent is read from the platform the source carries it under', () => {
+  // The source has no plain `tencent`: it carries the vendor under the
+  // platform it is sold through, and a vendor that vanishes because one page
+  // could not be read is worse than one whose fallback rows are two free
+  // models and one priced one.
+  const payload = {
+    'tencent-tokenhub': {
+      models: {
+        'hy4-preview': { id: 'hy4-preview', name: 'Hunyuan 4 Preview', release_date: '2026-08-28', cost: { input: 0.834, output: 2.501 } },
+        'hy3': { id: 'hy3', name: 'Hunyuan 3', release_date: '2026-07-06', cost: { input: 0, output: 0 } },
+      },
+    },
+  }
+  const parsed = parseModelsDev(payload, { vendorLimit: 0 })
+  const tencent = parsed.vendors.find((entry) => entry.vendor === 'tencent')
+  assert.ok(tencent !== undefined, 'Tencent is published')
+  assert.deepEqual(tencent.models.map((entry) => entry.id), ['tencent/hy4-preview', 'tencent/hy3'])
+  assert.equal(tencent.models[1].zero, true, 'the free model is marked as not necessarily free')
+})
+
+test('the gateway source spells Kimi the other way, and the order follows', () => {
+  // The gateway calls Kimi’s vendor `moonshotai` while the per-vendor dataset
+  // calls it `kimi`. Only the order follows the alias — the rows keep the
+  // source’s own ids — and without it Kimi sorts after the vendors nobody
+  // curates, so the two sources would not read the same way.
+  const payload = {
+    data: [
+      model('moonshotai/kimi-k3', 3000, { prompt: '0.000003', completion: '0.000015' }),
+      model('someother/model', 4000, { prompt: '0.000001', completion: '0.000002' }),
+    ],
+  }
+  const parsed = parseCatalogue(payload, { vendorLimit: 0 })
+  assert.deepEqual(parsed.vendors.map((entry) => entry.vendor), ['moonshotai', 'someother'])
+  const kimi = parsed.vendors[0]
+  assert.equal(kimi.models[0].id, 'moonshotai/kimi-k3', 'the row keeps the source’s own id')
+})
+
 test('the per-vendor source publishes each vendor’s own list price', () => {
   // Same output shape as the gateway source, but the prices are the vendors'
   // own, the ids are bare and have to be namespaced, and a vendor with no entry

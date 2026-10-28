@@ -567,6 +567,16 @@ test('the group says what the expansion is doing, and keeps the published rows',
   assert.ok(failed.html.includes('Acme Flagship'), 'the published rows stay on screen')
 })
 
+test('a retired model is marked, so a price that is not current does not look current', { skip }, () => {
+  const exports = loadClient()
+  const payload = ratesPayload()
+  payload.vendors[0].models[0].retired = true
+  const { html, complaints } = renderComponent(exports.RatesView, { state: { ...readyRates, data: payload }, onPatch: () => {} })
+  assert.deepEqual(complaints, [], 'React reported a problem with the rendered tree')
+  assert.ok(html.includes('retiredBadge'), 'the row says the model is retired')
+  assert.ok(html.includes('tl-badge-retired'), 'and the mark is the muted one')
+})
+
 /* ------------------------------------------------------------------- bill -- */
 
 /** The groupings the bill stacks, in page order. */

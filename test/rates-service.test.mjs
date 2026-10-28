@@ -297,14 +297,14 @@ test('fetchJson reports a timeout, an HTTP error and malformed JSON instead of t
   const malformed = await fetchJson('https://x.test', { fetchImpl: async () => ({ ok: true, status: 200, text: async () => 'not json' }) })
   assert.equal(malformed.ok, false)
 
-  // The per-vendor price list is 4.6 MB today, so a response that size is a real
+  // The per-vendor price list is 5.9 MB today, so a response that size is a real
   // one and must not be mistaken for an attack.
   const realistic = await fetchJson('https://x.test', {
-    fetchImpl: async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ pad: 'x'.repeat(5 * 1024 * 1024) }) }),
+    fetchImpl: async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ pad: 'x'.repeat(6 * 1024 * 1024) }) }),
   })
-  assert.equal(realistic.ok, true, 'a five-megabyte body is a real response')
+  assert.equal(realistic.ok, true, 'a six-megabyte body is a real response')
 
-  const huge = await fetchJson('https://x.test', { fetchImpl: async () => ({ ok: true, status: 200, text: async () => 'x'.repeat(9 * 1024 * 1024) }) })
+  const huge = await fetchJson('https://x.test', { fetchImpl: async () => ({ ok: true, status: 200, text: async () => 'x'.repeat(17 * 1024 * 1024) }) })
   assert.equal(huge.ok, false)
   assert.match(huge.reason, /body too large/)
 
@@ -467,6 +467,29 @@ test('the published payload stays small, and says what an expansion would show',
     assert.equal(acme.modelCount, 5, 'and the header still says how many models the provider has')
     assert.equal(acme.expandable, true, 'so the page knows there is more to show')
     assert.equal(acme.expandedCount, 5, 'and how much of it there is')
+  } finally {
+    cleanup()
+  }
+})
+
+test('the catalogue the bill prices from carries every model, and the page still gets a small payload', async () => {
+  // The page shows a provider's newest few models and the bill prices usage by
+  // model, so the two need different payloads: the page's stays small, and the
+  // bill's carries every model the catalogue has.
+  const { service, cleanup } = makeService({ models: MODELS_MANY })
+  try {
+    await service.refresh()
+    const page = service.read()
+    const catalogue = service.readCatalogue()
+    const acme = (payload) => payload.vendors.find((entry) => entry.vendor === 'acme')
+    assert.equal(acme(page).models.length, 3, 'the page shows the head')
+    assert.equal('allModels' in acme(page), false, 'and no whole list')
+    assert.equal(acme(catalogue).models.length, 5, 'the bill prices from the whole list')
+    assert.equal(acme(catalogue).modelCount, 5)
+    // The rest of the payload is the same answer, so the rate and the freshness
+    // are the ones the page already showed.
+    assert.equal(catalogue.fx.rate, page.fx.rate)
+    assert.equal(catalogue.catalogue.fetchedAt, page.catalogue.fetchedAt)
   } finally {
     cleanup()
   }

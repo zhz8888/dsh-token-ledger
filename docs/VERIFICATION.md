@@ -1124,6 +1124,51 @@ and cannot hold files, which is what decides that the host has to send the
 words over. When they cannot be read the section still appears and its labels
 fall back to the keys — a plugin must not vanish because a word was missing.
 
+## The price list adaptation check, 2026-10-28 — how far the list moved, and whether the plugin kept up
+
+The price list is someone else's data, and it moves: vendors retire models, rename
+them, add platforms, and publish one model under two names. This section records
+**what was checked against the live list** and **what came back**. The check itself
+is in `tools/models-dev-check.mjs` and can be run again.
+
+The list itself, measured that day:
+
+```
+models.dev: 233 providers, 8903 models, 8505 priced, 840 retired
+response: 5.9 MB
+cost blocks carrying tiers: 815
+```
+
+**The shape still matches.** Everything the plugin reads is still there:
+`cost.input` and `cost.output` (on all 8,505 priced models), `cost.cache_read`
+(6,212 models) and `cost.cache_write` (1,995), `release_date` (on all 8,903) and
+`limit`. `cost.tiers` (815) and `cost.context_over_200k` (633) are still there
+too — the plugin publishes the base tier only, and what the docs say about that
+is right.
+
+**But the model count has doubled and the composition of the list has changed.**
+It was 213 providers and 7,751 models; it is 233 and 8,903, and the growth is
+mostly gateways: OpenRouter, Vercel, Bedrock and Azure each list hundreds of
+models they resell. The plugin publishes a curated dozen, and the reason for that
+(a table of 233 is not a price list) therefore holds more firmly than before.
+
+**What the check found, and what was done about it:**
+
+| Problem | What it looked like |
+| --- | --- |
+| The bill could price a third of the models | It priced from the rows the page publishes; the list carries 217 priced models for the curated dozen, and the bill could see 33 |
+| Retired models were published as if on sale | The list marks them `deprecated`: half of Qwen's, six of MiniMax's eight, two of DeepSeek's four. DeepSeek's "newest three" were two retired models |
+| One model under two names counted twice | `gemini-flash-latest` sits beside `gemini-3.7-flash` at the same price, released the same day, and took one of Google's three slots |
+| Another vendor's model family was not recognised | Z.ai's models are all called `glm-*`, so ByteDance's group led with Z.ai's GLM — exactly what the hosted check exists to prevent |
+| Tencent had no entry in the list | It is carried under the platform id (`tencent-tokenhub`), and a host that could not read Tencent's own pricing page showed no Tencent at all |
+| The gateway source spells Kimi the other way | Without an alias Kimi sorted after the vendors nobody curates, so the two sources did not read the same way |
+| The response cap and the timeout no longer fit the list | 5.9 MB against an 8 MB cap and a 30-second timeout, and the download was measured at 44 seconds — so the refresh failed on the slow links that needed it |
+
+**What the check did not do either:** the list was unreachable twice that day (one
+connection reset, one connect timeout). The plugin's offline-first design is for
+exactly that: the last good catalogue keeps being served and the failed attempt
+is reported, rather than the page going blank.
+
 ## Not verified
 
 Stated plainly, because a verification file that only lists successes is not

@@ -6,6 +6,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Every provider on the Rates page can be expanded to all of its models.** The table
+  publishes each provider's newest two or three models while the group header says
+  how many models the provider has in all, so the two numbers never agreed. The ▸ at
+  the right of a provider's header now expands that group to **every** model the
+  catalogue carries, and pressing it again collapses the list again.
+
+  The full list is served on demand — `GET /api/token-ledger/rates?vendor=<provider>`
+  answers with one provider's models — because the rates payload is also what the
+  bill and the overview are priced from, and a reader who never expands a provider
+  should not pay for rows they did not ask for. The host keeps every published
+  provider's models in `rates.json`, so an offline host expands a provider just as
+  well. Hand-entered prices are merged into the expanded list, so a price typed
+  there is the price that shows, and an open list is fetched again after a save, so
+  it never shows a number the host has already replaced.
+
 ### Changed
 
 - **The page's translations moved out of the browser half into `locale/zh.json` and
@@ -25,22 +42,47 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   when they cannot be read at all the section still appears with its labels
   falling back to the keys — a plugin must not vanish because a word was missing.
 
-### Added
+- **The response cap and the timeout follow the price list.** The per-vendor list
+  is 5.9 MB now (it was 4.6 MB), against a cap that allowed 8 MB and a timeout
+  of 30 seconds — and a download of it over a slow link was measured at 44
+  seconds, so the refresh failed on exactly the hosts that needed it. The cap is
+  16 MB and the timeout a minute.
 
-- **Every provider on the Rates page can be expanded to all of its models.** The table
-  publishes each provider's newest two or three models while the group header says
-  how many models the provider has in all, so the two numbers never agreed. The ▸ at
-  the right of a provider's header now expands that group to **every** model the
-  catalogue carries, and pressing it again collapses the list again.
+### Fixed
 
-  The full list is served on demand — `GET /api/token-ledger/rates?vendor=<provider>`
-  answers with one provider's models — because the rates payload is also what the
-  bill and the overview are priced from, and a reader who never expands a provider
-  should not pay for rows they did not ask for. The host keeps every published
-  provider's models in `rates.json`, so an offline host expands a provider just as
-  well. Hand-entered prices are merged into the expanded list, so a price typed
-  there is the price that shows, and an open list is fetched again after a save, so
-  it never shows a number the host has already replaced.
+- **The bill prices from the whole price list, not from the rows the table
+  shows.** The Rates page publishes each provider's newest three models, and the
+  bill priced from exactly those rows: with the per-vendor list carrying 217
+  priced models for the curated dozen, **a third of them could be priced at
+  all**, and the rest of a bill's calls were reported as unpriced. The catalogue
+  the bill and the overview price from now carries every model each provider
+  has, while the page's own payload stays small.
+
+- **A retired model no longer takes a provider's slots.** The price list marks
+  the models a vendor has retired with `status: "deprecated"` — half of Qwen's
+  list, six of MiniMax's eight, two of DeepSeek's four — and they were
+  published as if they were on sale: DeepSeek's "newest three" were two retired
+  models. They keep their price, because that is what the calls that were made
+  were billed at, and the row now says it is retired.
+
+- **A model the list publishes under two names counts once.** `gemini-flash-latest`
+  sits beside `gemini-3.7-flash` at the same price, released the same day, and
+  took one of Google's three slots as a model of its own.
+
+- **Another vendor's model family is told from the vendor's own.** Z.ai's models
+  are all called `glm-*`, so the check that keeps a platform's guests out of its
+  own vendor's slots missed them, and ByteDance's group led with Z.ai's GLM.
+  The family is recognised now, and ByteDance's own models take the slots.
+
+- **Tencent is read from the platform the list carries it under.** The list has
+  no plain `tencent`: it carries the vendor under the platform it is sold
+  through, so a host that could not read Tencent's own pricing page showed no
+  Tencent at all. It falls back to the list now.
+
+- **The gateway source spells Kimi the other way, and the order follows.** The
+  gateway calls Kimi's vendor `moonshotai`, and without an alias Kimi sorted
+  after the vendors nobody curates — so the two sources did not read the same
+  way. The rows keep the source's own ids; only the order follows.
 
 ## [1.1.3] - 2026-10-28
 
