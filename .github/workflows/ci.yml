@@ -26,21 +26,24 @@ jobs:
           - os: macos-latest
             node: '24.x'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
 
       - name: Show the runtime
         run: node --version
 
-      # The two devDependencies are react and react-dom, and they exist only so
-      # the browser half can be rendered and asserted under the real library.
-      # They are never installed for a consumer of this package: it ships with no
-      # dependencies, no peer dependencies and no install scripts.
+      # The three devDependencies are react, react-dom and the slot registry, and
+      # they exist only so the browser half can be rendered and asserted against
+      # the real library and the real registry. They are never installed for a
+      # consumer of this package: it ships with no dependencies, no peer
+      # dependencies and no install scripts. `npm ci` rather than `npm install` so
+      # the committed lockfile is enforced — it is what pins the slot registry to
+      # the build the host actually ships, instead of letting the range float.
       - name: Install test-only React
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Test
         run: npm test
@@ -52,8 +55,8 @@ jobs:
     name: published contents
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '22.x'
 

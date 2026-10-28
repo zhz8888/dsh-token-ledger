@@ -25,11 +25,13 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # No dependency cache on purpose: a release build should not be able to
-      # resolve anything stale. The only dependencies are the two test-only
-      # React packages, and the package itself ships with none.
+      # resolve anything stale. The only dependencies are the three test-only
+      # packages (react, react-dom, the slot registry), and the package itself
+      # ships with none. `npm ci` installs from the committed lockfile, so the
+      # build is reproducible rather than whatever the ranges currently resolve to.
       #
       # Node 24, not 22: trusted publishing needs npm >= 11.5.1, and the npm
       # bundled with Node 22 is npm 10, which cannot do the OIDC exchange at
@@ -46,13 +48,13 @@ jobs:
       # actions/setup-node#1551. Without the input, setup-node writes nothing
       # and npm falls back to OIDC, which is the whole point of this workflow.
       # The registry is still registry.npmjs.org, by npm's own default.
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           package-manager-cache: false
 
       - name: Install test-only React
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Test
         run: npm test
