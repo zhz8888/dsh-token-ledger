@@ -16,6 +16,7 @@ The numbers are only useful if you know exactly what they count.
 | **Reasoning tokens are a subset** | Reported separately, never added into the total, because they are already inside `outputTokens`. |
 | **Local calendar days** | Days are your days, not UTC days. |
 | **Forks are cut, delegated subagents and resumes are not** | See below. |
+| **A call is billed to the model that served it** | The route is read from the session's own header, even when that header sits in the prefix the fold skips. |
 
 ### Forks versus delegated subagents versus resumes
 
@@ -38,6 +39,16 @@ fork-inherited prefix", so it is what decides the cut. Reading the cut off
 delegated sessions carried a parent, and cutting them removed **892 calls worth
 119,393,450 tokens** from the recomputed ledger — calls that were all made
 *after* the subagent was created, so no other session accounted for them.
+
+### A call is billed to the model that served it
+
+The provider and model of a call come from the session's `request/header`. A
+live session's first header sits in the prefix the live fold skips — the seed
+the session was created with — so reading the route only from the events that
+follow left the earliest calls billed to `unknown/unknown` even though the
+model was known: 72 calls worth 10,059,207 tokens on the same real home. The
+route is now read out of the skipped prefix, the way the disk fold reads it, so
+a call is billed to the model that answered it.
 
 
 ## The audit distinguishes two kinds of difference

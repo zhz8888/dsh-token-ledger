@@ -187,6 +187,25 @@ test('folding twice is idempotent', () => {
   assert.equal(ledger.calls, ALPHA_EXPECTED.calls)
 })
 
+/**
+ * Regression: a live session's first `request/header` sits in the prefix the
+ * live path skips — the seed a session was created with. The calls that follow
+ * it were therefore billed to `unknown/unknown` even though the model was
+ * known: 72 calls worth 10,059,207 tokens on a real home. The route is read
+ * out of that prefix, exactly as the disk fold already did.
+ */
+test('a live session takes its route from the prefix it skips', () => {
+  const events = [
+    { type: 'request/header', time: DAY1, data: { header: { config: { provider: 'acme', model: 'acme/one' } } } },
+    { type: 'assistant/message', time: DAY1, data: { turn: 1, step: 1, usage: { inputTokens: 700, outputTokens: 30 } } },
+  ]
+  const ledger = new UsageLedger()
+  ledger.adoptSession(fakeSession('sess-live', events, { firstLiveSeq: 1 }))
+  assert.equal(ledger.calls, 1)
+  assert.equal(ledger.totals.totalTokens, 730)
+  assert.deepEqual([...ledger.models.keys()], ['acme/acme/one'])
+})
+
 test('snapshot and restore round-trip without double counting', () => {
   const original = new UsageLedger()
   original.adoptHistory({ sessionId: 'sess-alpha', events: withSeq(ALPHA_EVENTS) })

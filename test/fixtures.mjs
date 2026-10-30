@@ -246,10 +246,10 @@ export function encodeSessionLog(events, { eventsPerFrame = 1 } = {}) {
  *
  * @param {string} id - session id.
  * @param {object[]} events - the session's events.
- * @param {{ inheritedEventCount?: number }} [options] - extra session fields.
+ * @param {{ inheritedEventCount?: number, firstLiveSeq?: number }} [options] - extra session fields.
  * @returns {object} a session-like object.
  */
-export function fakeSession(id, events, { inheritedEventCount } = {}) {
+export function fakeSession(id, events, { inheritedEventCount, firstLiveSeq } = {}) {
   const session = {
     id,
     seq: events.length,
@@ -257,5 +257,6 @@ export function fakeSession(id, events, { inheritedEventCount } = {}) {
     eventAt: (index) => events[index],
   }
   if (inheritedEventCount !== undefined) session.inheritedEventCount = inheritedEventCount
+  if (firstLiveSeq !== undefined) session.firstLiveSeq = firstLiveSeq
   return session
 }

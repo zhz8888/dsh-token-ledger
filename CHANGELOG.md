@@ -65,6 +65,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the flag is not cut at all, because an unknown boundary over-counts rather
   than losing tokens.
 
+- **A call is billed to the model that served it.** The provider and model come
+  from the session's `request/header`, and a live session's first header sits in
+  the prefix the live fold skips — the seed the session was created with. The
+  route was therefore never set for the earliest calls of a session, and they
+  were billed to `unknown/unknown` even though the model was known: 72 calls
+  worth 10,059,207 tokens on the same real home. The route is now read out of
+  the skipped prefix, the way the disk fold already read it.
+
 - **The bill prices from the whole price list, not from the rows the table
   shows.** The Rates page publishes each provider's newest three models, and the
   bill priced from exactly those rows: with the per-vendor list carrying 217
