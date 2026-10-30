@@ -80,7 +80,7 @@ function invoke(argv) {
 }
 
 /** A fork: the prefix before `session/end-seed` belongs to the parent. */
-const FORK_EVENTS = withHeader({ id: 'sess-fork', parentSession: 'sess-parent', seedLength: 4 }, [
+const FORK_EVENTS = withHeader({ id: 'sess-fork', parentSession: 'sess-parent', isSeeded: true, seedLength: 4 }, [
   userMessage('parent work', DAY1),
   headerEvent({ time: DAY1 }),
   // Inherited usage: must NOT be counted.
@@ -303,7 +303,7 @@ test('a truncated session log is skipped with a warning, not a crash', () => {
 
 test('forked logs without a marker are folded whole and warned about', () => {
   const { home, cleanup } = makeHome({
-    'sess-nomarker': withHeader({ id: 'sess-nomarker', parentSession: 'gone' }, [
+    'sess-nomarker': withHeader({ id: 'sess-nomarker', parentSession: 'gone', isSeeded: true }, [
       headerEvent({ time: DAY1 }),
       assistantMessage({ turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 1 }, time: DAY1 }),
     ]),
@@ -337,7 +337,7 @@ test('a streaming sample replaced by its message stays one call in the CLI fold'
 
 test('BETA fixture semantics hold through the CLI path too', () => {
   const { home, cleanup } = makeHome({
-    'sess-beta': withHeader({ id: 'sess-beta', parentSession: 'sess-parent', seedLength: BETA_INHERITED }, [
+    'sess-beta': withHeader({ id: 'sess-beta', parentSession: 'sess-parent', isSeeded: true, seedLength: BETA_INHERITED }, [
       ...BETA_EVENTS.slice(0, BETA_INHERITED),
       { type: 'session/end-seed', seq: BETA_INHERITED - 1, time: DAY1, data: {} },
       ...BETA_EVENTS.slice(BETA_INHERITED),

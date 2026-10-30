@@ -195,7 +195,7 @@ test('backfills stored sessions, cutting only a fork prefix', async () => {
     inspect: async (id) => {
       if (id === 'sess-alpha') return { meta: { id }, events: withSeq(ALPHA_EVENTS) }
       return {
-        meta: { id, parentSession: 'sess-parent' },
+        meta: { id, parentSession: 'sess-parent', isSeeded: true },
         inheritedEventCount: BETA_INHERITED,
         events: withSeq(BETA_EVENTS),
       }
@@ -314,7 +314,7 @@ test('a fork with an unusable declared cut is folded whole, with a warning', asy
   const persistence = {
     list: async () => [{ id: 'sess-fork' }],
     inspect: async () => ({
-      meta: { id: 'sess-fork', parentSession: 'sess-parent' },
+      meta: { id: 'sess-fork', parentSession: 'sess-parent', isSeeded: true },
       // Logical-event coordinates, against a much shorter row-form array.
       inheritedEventCount: 13757,
       events: withSeq(ALPHA_EVENTS),
@@ -339,14 +339,14 @@ test('a fork with an unusable declared cut is folded whole, with a warning', asy
 
 test('a fork carrying its boundary marker is cut after it', async () => {
   const events = withSeq([
-    { type: 'session', id: 'sess-fork', parentSession: 'sess-parent' },
+    { type: 'session', id: 'sess-fork', parentSession: 'sess-parent', isSeeded: true },
     BETA_EVENTS[2],
     { type: 'session/end-seed', time: DAY3, data: {} },
     BETA_EVENTS[4],
   ])
   const persistence = {
     list: async () => [{ id: 'sess-fork' }],
-    inspect: async () => ({ meta: { id: 'sess-fork', parentSession: 'sess-parent' }, inheritedEventCount: 13757, events }),
+    inspect: async () => ({ meta: { id: 'sess-fork', parentSession: 'sess-parent', isSeeded: true }, inheritedEventCount: 13757, events }),
   }
   const mounted = await mount({ persistence })
   try {

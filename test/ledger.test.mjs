@@ -10,7 +10,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { UsageLedger, countersFromUsage, cwdOf, dateKeyOf, emptyCounters, inheritedCut, isForkSession, isPeakTime } from '../lib/ledger.js'
+import { UsageLedger, countersFromUsage, cwdOf, dateKeyOf, emptyCounters, hasInheritedPrefix, inheritedCut, isForkSession, isPeakTime } from '../lib/ledger.js'
 import {
   ALPHA_EVENTS,
   ALPHA_EXPECTED,
@@ -284,15 +284,48 @@ test('inheritedCut locates a fork boundary by the marker, not by a count', () =>
   assert.equal(inheritedCut({ header: { id: 'x' }, events, inheritedEventCount: 2 }), 0)
 
   // A fork cuts after the marker, and the declared count cannot override it.
-  assert.equal(inheritedCut({ header: { parentSession: 'p' }, events, inheritedEventCount: 2 }), 3)
-  assert.equal(inheritedCut({ header: { parentSession: 'p' }, events, inheritedEventCount: 9999 }), 3)
+  assert.equal(inheritedCut({ header: { parentSession: 'p', isSeeded: true }, events, inheritedEventCount: 2 }), 3)
+  assert.equal(inheritedCut({ header: { parentSession: 'p', isSeeded: true }, events, inheritedEventCount: 9999 }), 3)
 
   // No marker: a declared count is used only when it can index this list.
   const noMarker = events.filter((event) => event.type !== 'session/end-seed')
-  assert.equal(inheritedCut({ header: { parentSession: 'p' }, events: noMarker, inheritedEventCount: 2 }), 2)
-  assert.equal(inheritedCut({ header: { parentSession: 'p' }, events: noMarker, inheritedEventCount: 9999 }), 0)
-  assert.equal(inheritedCut({ header: { parentSession: 'p' }, events: [] }), 0)
+  assert.equal(inheritedCut({ header: { parentSession: 'p', isSeeded: true }, events: noMarker, inheritedEventCount: 2 }), 2)
+  assert.equal(inheritedCut({ header: { parentSession: 'p', isSeeded: true }, events: noMarker, inheritedEventCount: 9999 }), 0)
+  assert.equal(inheritedCut({ header: { parentSession: 'p', isSeeded: true }, events: [] }), 0)
   assert.equal(inheritedCut(), 0)
+})
+
+/**
+ * Regression: a delegated subagent records a parent session, but its log is its
+ * own from the first event — DSH marks that with `isSeeded: false`. Cutting it
+ * at the seed marker threw the subagent's own calls away: on a home whose logs
+ * were all delegated subagents, that removed 892 calls worth 119,393,450 tokens
+ * from the recomputed ledger, and every one of them had been made after the
+ * subagent was created, so no other session accounted for them.
+ */
+test('a delegated subagent is folded whole, because its log is its own', () => {
+  const events = [
+    { type: 'session', id: 'child', parentSession: 'parent', isSeeded: false },
+    { type: 'assistant/message', time: DAY1, data: { turn: 1, step: 1, usage: { inputTokens: 999 } } },
+    { type: 'session/end-seed', time: DAY1, data: {} },
+    { type: 'assistant/message', time: DAY1, data: { turn: 2, step: 1, usage: { inputTokens: 5 } } },
+  ]
+
+  // The marker and the declared count are both ignored: nothing is inherited.
+  assert.equal(inheritedCut({ header: { parentSession: 'p', isSeeded: false }, events, inheritedEventCount: 2 }), 0)
+  assert.equal(inheritedCut({ header: { parentSession: 'p', isSeeded: false }, events, inheritedEventCount: 9999 }), 0)
+
+  // A header without the flag predates it, and an unknown boundary over-counts
+  // rather than losing tokens.
+  assert.equal(inheritedCut({ header: { parentSession: 'p' }, events, inheritedEventCount: 2 }), 0)
+})
+
+test('hasInheritedPrefix separates forks from delegated subagents', () => {
+  assert.equal(hasInheritedPrefix({ parentSession: 'p', isSeeded: true }), true)
+  assert.equal(hasInheritedPrefix({ parentSession: 'p', isSeeded: false }), false)
+  assert.equal(hasInheritedPrefix({ parentSession: 'p' }), false)
+  assert.equal(hasInheritedPrefix({ isSeeded: true }), false)
+  assert.equal(hasInheritedPrefix(undefined), false)
 })
 
 test('isForkSession separates forks from resumes', () => {
@@ -311,7 +344,7 @@ test('isForkSession separates forks from resumes', () => {
  */
 test('a fork whose declared count overshoots the array is still counted', () => {
   const records = withSeq([
-    { type: 'session', id: 'child', parentSession: 'parent', seedLength: 13757 },
+    { type: 'session', id: 'child', parentSession: 'parent', isSeeded: true, seedLength: 13757 },
     // The parent's history, as the compact row form presents it.
     { type: 'assistant/message', time: DAY1, data: { turn: 1, step: 1, usage: { inputTokens: 400000, outputTokens: 1 } } },
     { type: 'text-chunks', time: DAY1, data: { texts: ['a', 'b'] } },

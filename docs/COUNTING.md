@@ -15,25 +15,29 @@ The numbers are only useful if you know exactly what they count.
 | **`totalTokens` is derived** | It is the sum of the four buckets, never the provider's own total field. Across 15,778 real usage reports the two agreed every single time, and deriving it keeps the buckets and the total consistent by construction. |
 | **Reasoning tokens are a subset** | Reported separately, never added into the total, because they are already inside `outputTokens`. |
 | **Local calendar days** | Days are your days, not UTC days. |
-| **Forks are cut, resumes are not** | See below. |
+| **Forks are cut, delegated subagents and resumes are not** | See below. |
 
-### Forks versus resumes
+### Forks versus delegated subagents versus resumes
 
-A stored log can begin with a prefix of history that was already recorded. Two
-different situations produce one, and getting them confused is the most common
-way a usage plugin silently gets the wrong answer:
+A stored log can begin with a prefix of history that was already recorded.
+Three different situations produce one, and getting them confused is the most
+common way a usage plugin silently gets the wrong answer:
 
-- **Fork** (`parentSession` set): the prefix is the *parent's* history, counted
-  in the parent's own log. Counting it again here would double count. It is cut.
+- **Fork** (`parentSession` set, `isSeeded` true): the prefix is the *parent's*
+  history, counted in the parent's own log. Counting it again here would double
+  count. It is cut.
+- **Delegated subagent** (`parentSession` set, `isSeeded` false): the log is the
+  subagent's own, from its first event — the parent is provenance, not history.
+  Cutting it would throw away the subagent's own calls. Nothing is cut.
 - **Resume** (no parent): the prefix is *this session's own* earlier history,
   stored once. Cutting it would lose tokens. Nothing is cut.
 
-This is not a guess. Against real logs, every forked session whose parent log was
-still present had its pre-marker usage fingerprints contained in the parent's,
-while the non-forked logs carrying the same marker never repeated their prefix
-later in the file. On one real 139-session home the distinction was worth
-79.9 million tokens of double counting that a naive "count every log" pass
-reports.
+`isSeeded` is the harness's own answer to "does this session contain a
+fork-inherited prefix", so it is what decides the cut. Reading the cut off
+`parentSession` alone conflated forks with delegation: on one real home all 93
+delegated sessions carried a parent, and cutting them removed **892 calls worth
+119,393,450 tokens** from the recomputed ledger — calls that were all made
+*after* the subagent was created, so no other session accounted for them.
 
 
 ## The audit distinguishes two kinds of difference

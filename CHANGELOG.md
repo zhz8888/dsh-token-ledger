@@ -50,6 +50,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A delegated subagent is no longer cut like a fork.** The cut was decided by
+  `header.parentSession` alone, but the harness records a parent for two
+  different things: a **fork**, whose log begins with the parent's history, and
+  a **delegated subagent**, whose log is its own from the first event and whose
+  parent is provenance. Only the first carries an inherited prefix, and the
+  harness says so — `isSeeded` is "whether the Session contains a
+  fork-inherited prefix". Cutting the subagents removed their own calls: on one
+  real home, whose 93 delegated sessions all carry a parent, the recomputed
+  ledger came up **892 calls and 119,393,450 tokens short** — every one of those
+  calls was made *after* the subagent was created, so no other session had
+  accounted for them, and the live fold — which does not cut — counted exactly
+  those calls. The cut is now decided by `isSeeded`, and a header that predates
+  the flag is not cut at all, because an unknown boundary over-counts rather
+  than losing tokens.
+
 - **The bill prices from the whole price list, not from the rows the table
   shows.** The Rates page publishes each provider's newest three models, and the
   bill priced from exactly those rows: with the per-vendor list carrying 217
