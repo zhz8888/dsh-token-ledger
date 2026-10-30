@@ -25,6 +25,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The repository now says out loud that it is a fork.** It is one —
+  [chenmiao8563/dsh-token-ledger](https://github.com/chenmiao8563/dsh-token-ledger)
+  is the original, and it published the plugin as
+  `@chenmiao8563/dsh-token-ledger` up to v1.1.2 — but the documentation never
+  said so: the README named this repository as the project's home and left the
+  origin unmentioned, even though the MIT notice in `LICENSE` carries both
+  holders and the `upstream` remote points at the original.
+
+  Both READMEs now carry the declaration where a reader meets it first, the
+  Acknowledgements and License sections name the upstream and say why its notice
+  is kept, the documentation index and the development guide repeat it for
+  contributors, and the development guide also says what a fork means in
+  practice: the original stays as the `upstream` remote, a change here is not
+  upstreamed automatically, and the plugin's identity — its package name, its
+  client module id and its composition row — is this fork's own.
+
 - **The page's translations moved out of the browser half into `locale/zh.json` and
   `locale/en.json`.** They were two objects inside `lib/client.js` — 185 keys a
   language, written as code in a file that is otherwise code — and their key set

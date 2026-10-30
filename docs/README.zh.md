@@ -6,6 +6,11 @@
 
 README 讲的是怎么**用**这个插件；这几篇讲的是它背后的细节——规则、依据与证据。
 
+本仓库是 [chenmiao8563/dsh-token-ledger](https://github.com/chenmiao8563/dsh-token-ledger)
+的 fork，那才是原项目，它在 v1.1.2 之前以 `@chenmiao8563/dsh-token-ledger` 这个包名发布。
+上游的 MIT 声明被保留，本 fork 的权利人声明加在旁边；原仓库作为 `upstream` 这个 git remote
+保留。
+
 | 文档 | 内容 |
 | --- | --- |
 | [这些数字是怎么数出来的](COUNTING.zh.md) | 计数规则、fork 与 resume 的区分，以及审计那两类差异分别意味着什么。 |

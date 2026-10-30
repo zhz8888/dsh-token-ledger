@@ -4,6 +4,34 @@ English | [中文](DEVELOPMENT.zh.md)
 
 [← Back to the README](../README.md)
 
+## This is a fork
+
+This repository is a fork of
+[chenmiao8563/dsh-token-ledger](https://github.com/chenmiao8563/dsh-token-ledger),
+the original project. It published the plugin as
+`@chenmiao8563/dsh-token-ledger` up to v1.1.2; this fork continues the work under
+`@zhz8888/dsh-token-ledger`.
+
+**The upstream's MIT notice stays.** MIT requires that the original notice travel
+with the code, so [LICENSE](../LICENSE) carries both holders rather than replacing
+the first one — and the same rule applies to anything taken from upstream verbatim.
+
+**The original is kept as the `upstream` remote**, so the two histories can be
+compared and upstream work can be pulled in:
+
+```bash
+git remote -v                              # origin: this fork, upstream: the original
+git fetch upstream
+git log --oneline upstream/main..main      # what this fork adds
+```
+
+**A change here is not upstreamed automatically.** A fix worth having upstream is
+worth opening as an issue on
+[chenmiao8563/dsh-token-ledger](https://github.com/chenmiao8563/dsh-token-ledger/issues),
+and the two repositories may diverge from here on: the plugin's identity — its
+package name, its client module id and its composition row — is this fork's own,
+because the harness resolves the bundle by it.
+
 ## Development
 
 This project is developed with pnpm, pinned by the `packageManager` field in

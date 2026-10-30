@@ -4,6 +4,28 @@
 
 [← 返回 README](../README.zh.md)
 
+## 这是一个 fork
+
+本仓库是 [chenmiao8563/dsh-token-ledger](https://github.com/chenmiao8563/dsh-token-ledger)
+的 fork，那才是原项目。它在 v1.1.2 之前以 `@chenmiao8563/dsh-token-ledger` 这个包名发布；
+本 fork 以 `@zhz8888/dsh-token-ledger` 延续这份工作。
+
+**上游的 MIT 声明保留。** MIT 要求原始声明随代码同行，所以 [LICENSE](../LICENSE)
+里是并列两个权利人，而不是替换掉第一个——逐字取自上游的代码同理。
+
+**原仓库作为 `upstream` 这个 remote 保留**，两条历史因此可以对照，上游的改动也能拉进来：
+
+```bash
+git remote -v                              # origin: 本 fork，upstream: 原仓库
+git fetch upstream
+git log --oneline upstream/main..main      # 本 fork 多出来的东西
+```
+
+**这里的改动不会自动回流上游。** 值得上游采纳的修复，值得去
+[chenmiao8563/dsh-token-ledger](https://github.com/chenmiao8563/dsh-token-ledger/issues)
+开一个 issue；两个仓库也可能从此分叉：插件的身份——包名、客户端模块 id 与组合行——
+属于本 fork，因为 harness 靠它解析这个 bundle。
+
 ## 开发
 
 本项目用 pnpm 开发，版本由 `package.json` 的 `packageManager` 字段钉住；

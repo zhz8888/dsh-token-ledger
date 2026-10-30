@@ -12,6 +12,13 @@ English | [中文](README.zh.md)
 
 ---
 
+> **This repository is a fork.** The original project is
+> [chenmiao8563/dsh-token-ledger](https://github.com/chenmiao8563/dsh-token-ledger),
+> which published the plugin as `@chenmiao8563/dsh-token-ledger` up to v1.1.2.
+> This fork continues that work under `@zhz8888/dsh-token-ledger`, keeps the
+> upstream's MIT notice in place and adds its own beside it, and carries the
+> original as the `upstream` git remote. See [License](#license).
+
 A ledger, not a dashboard. It folds the durable DSH session log into token totals,
 keeps them restart-safe, and — the part that matters — lets you **recompute the
 exact same numbers from the raw logs and diff them** against what the running host
@@ -383,6 +390,10 @@ from a diagnosis.
 
 ## Acknowledgements
 
+- **This project is a fork of
+  [chenmiao8563/dsh-token-ledger](https://github.com/chenmiao8563/dsh-token-ledger)**,
+  which is the original. Everything here descends from it, its MIT notice travels
+  with the code, and the `upstream` remote points at it.
 - The slot registry, the locale service and the settings shell this plugin binds to
   come from [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
 - The vendor marks are the official ones, taken from the vendors' own sites and from
@@ -395,6 +406,13 @@ from a diagnosis.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+This repository is a fork of
+[chenmiao8563/dsh-token-ledger](https://github.com/chenmiao8563/dsh-token-ledger),
+the original project, which published the plugin as
+`@chenmiao8563/dsh-token-ledger` up to v1.1.2. The upstream's MIT notice is
+retained rather than replaced — MIT requires that the original notice travel
+with the code — and this fork's holder is added beside it.
 
 The code is MIT licensed. The vendor marks bundled with the package (OpenAI,
 Anthropic, Google, DeepSeek, Qwen, xAI, Z.ai, Kimi, MiniMax, Tencent, Xiaomi and

@@ -12,6 +12,12 @@
 
 ---
 
+> **本仓库是一个 fork。** 原项目是
+> [chenmiao8563/dsh-token-ledger](https://github.com/chenmiao8563/dsh-token-ledger)，
+> 它在 v1.1.2 之前以 `@chenmiao8563/dsh-token-ledger` 这个包名发布。本 fork 以
+> `@zhz8888/dsh-token-ledger` 延续这份工作，保留上游的 MIT 声明并在其旁边加上自己的，
+> 同时把原仓库作为 `upstream` 这个 git remote 保留下来。详见[许可证](#许可证)。
+
 这是一本**账本**，不是一块仪表盘。它把 DSH 的持久会话日志折叠成 token 用量，保证重启不丢，
 而且——这是关键——允许你**从原始日志重算同一批数字并与之对账**。
 
@@ -349,6 +355,9 @@ pnpm run verify    # 打包不变式
 
 ## 致谢
 
+- **本项目是 [chenmiao8563/dsh-token-ledger](https://github.com/chenmiao8563/dsh-token-ledger)
+  的 fork**，那才是原项目。这里的每一行都源自它，它的 MIT 声明随代码同行，`upstream`
+  这个 remote 指向的就是它。
 - 它绑定的槽位注册表、语言服务与设置外壳都来自
   [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)。
 - 厂商标识是各家官方的那一套，取自它们自己的官网与
@@ -359,6 +368,11 @@ pnpm run verify    # 打包不变式
 ## 许可证
 
 MIT —— 见 [LICENSE](LICENSE)。
+
+本仓库是 [chenmiao8563/dsh-token-ledger](https://github.com/chenmiao8563/dsh-token-ledger)
+的 fork，那才是原项目，它在 v1.1.2 之前以 `@chenmiao8563/dsh-token-ledger` 这个包名发布。
+上游的 MIT 声明是被保留而不是被替换的——MIT 要求原始声明随代码同行——本 fork 的权利人
+声明则加在旁边。
 
 代码采用 MIT 许可证。包内附带的厂商标识（OpenAI、Anthropic、Google、DeepSeek、Qwen、
 xAI、Z.ai、Kimi、MiniMax、腾讯、小米、字节跳动）属于各自权利人的商标，仅用于标识

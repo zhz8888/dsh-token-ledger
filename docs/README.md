@@ -7,6 +7,13 @@ English | [中文](README.zh.md)
 The READMEs carry what you need to **use** the plugin. These carry the detail
 behind it — the rules, the arguments and the evidence.
 
+This repository is a fork of
+[chenmiao8563/dsh-token-ledger](https://github.com/chenmiao8563/dsh-token-ledger),
+the original project, which published the plugin as
+`@chenmiao8563/dsh-token-ledger` up to v1.1.2. The upstream's MIT notice is
+retained and this fork's holder is added beside it; the original is kept as the
+`upstream` git remote.
+
 | Document | What it holds |
 | --- | --- |
 | [How the numbers are counted](COUNTING.md) | The counting rules, how a fork is told from a resume, and what the audit's two kinds of difference mean. |
