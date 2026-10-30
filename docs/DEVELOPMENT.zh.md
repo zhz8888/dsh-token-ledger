@@ -69,7 +69,7 @@ DOM 属性，React 会报出来，而手写的 `createElement` 会默默接受�
 **打一个 tag 就是发布。不需要在任何地方存放 token。**
 
 ```bash
-git tag v1.1.3 && git push origin v1.1.3
+git tag v1.1.4 && git push origin v1.1.4
 ```
 
 tag 必须与 `package.json` 里的版本一致——workflow 不一致就拒绝发布——所以请用清单里

@@ -9,7 +9,7 @@ start:
 
 | | What it is | When it applies |
 | --- | --- | --- |
-| **A tag push** | `git push origin v1.1.3` runs `release.yml`, which publishes over OIDC **trusted publishing** — no token stored anywhere. | Every release **after** the package exists on npm and a Trusted Publisher is configured for this repository. |
+| **A tag push** | `git push origin v1.1.4` runs `release.yml`, which publishes over OIDC **trusted publishing** — no token stored anywhere. | Every release **after** the package exists on npm and a Trusted Publisher is configured for this repository. |
 | **A manual publish** | `npm publish` from this checkout, with your own npm login and a one-time code. | The **first** release of a package. OIDC cannot be configured for a package that does not exist yet. |
 
 `@zhz8888/dsh-token-ledger` is at its first release, so it goes out by hand. This
@@ -48,7 +48,7 @@ all.
 
 ```bash
 git status --short          # must print nothing
-git log --oneline -1        # release: 1.1.3
+git log --oneline -1        # release: 1.1.4
 ```
 
 **2. Check that the version is not already on the registry.**
@@ -76,7 +76,7 @@ it names, and the tag and access it will use:
 
 ```
 npm notice Publishing to https://registry.npmjs.org/ with tag latest and public access (dry-run)
-+ @zhz8888/dsh-token-ledger@1.1.3
++ @zhz8888/dsh-token-ledger@1.1.4
 ```
 
 If the first line names the mirror instead, stop: the registry override did not take.
