@@ -52,11 +52,25 @@ const options = [
   { value: 'overview', label: '概览' },
   { value: 'rates', label: '费率' },
   { value: 'bill', label: '账单' },
+  { value: 'backup', label: '备份' },
 ]
 
 const markup = (value) =>
   server.renderToStaticMarkup(
     react.createElement(client.ViewTabs, { value, label: '账本视图', options, onChange: () => {} }),
+  )
+
+/** The backup page, as the browser half renders it. */
+const dictionaries = {
+  zh: JSON.parse(readFileSync(join(root, 'locale/zh.json'), 'utf8')),
+  en: JSON.parse(readFileSync(join(root, 'locale/en.json'), 'utf8')),
+}
+const backupMarkup = (locale) =>
+  server.renderToStaticMarkup(
+    react.createElement(client.BackupView, {
+      t: (key) => dictionaries[locale][key] ?? key,
+      state: { status: 'ready', data: { ledgerUpdatedAt: new Date(2026, 9, 31, 12, 0, 0).getTime() }, error: null },
+    }),
   )
 
 /** The panel chrome, as the host's settings shell draws it. */
@@ -114,7 +128,9 @@ const body = Array.from({ length: 14 }, (_, index) => `
     <div class="tl-note">工作区 / 会话 / 模型 / 供应商 —— 每个分组各有自己的时间段。</div>
   </div>`).join('')
 
-const page = (theme) => `<!doctype html>
+const page = (theme) => {
+  const locale = theme === 'dark' ? 'zh' : 'zh'
+  return `<!doctype html>
 <html><head><meta charset="utf-8">
 <style>${tokens}${panelCss}${pluginCss()}
 body { margin: 0; padding: 24px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
@@ -133,13 +149,14 @@ body { margin: 0; padding: 24px; background: var(--dsw-alias-bg-layer-1); color:
     <div class="header"><div style="margin-left:auto">×</div></div>
     <div class="options" id="options">
       <div class="tl-root">
-        <div class="tl-row tl-view-bar">${markup('bill')}</div>
-        <div class="tl-panel">${body}</div>
+        <div class="tl-row tl-view-bar">${markup('backup')}</div>
+        <div class="tl-panel">${backupMarkup(locale)}${body}</div>
       </div>
     </div>
   </div>
 </div>
 </body></html>`
+}
 
 mkdirSync(join(root, '.tmp'), { recursive: true })
 writeFileSync(join(root, '.tmp/stickybar-light.html'), page('light'))
