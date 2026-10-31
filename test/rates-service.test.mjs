@@ -8,7 +8,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -320,6 +320,194 @@ test('a malformed response body is a failed source, not a crash', async () => {
     assert.match(outcome.catalogue, /^failed \(no usable models/)
     assert.match(outcome.fx, /^failed \(no usable rate/)
     assert.equal(service.read().catalogue.available, false)
+  } finally {
+    cleanup()
+  }
+})
+
+test('fetchJson enforces the size cap while the body is arriving, not after it is in memory', async () => {
+  // A `text()`-shaped transport can only be measured after the fact, but a real
+  // fetch response carries a stream: the cap has to be applied to the stream, or
+  // a hostile endpoint has already filled memory by the time the length is read.
+  let textCalls = 0
+  const chunk = () => new Uint8Array(1024 * 1024).fill(0x78)
+  const oversized = await fetchJson('https://x.test', {
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      body: new ReadableStream({
+        pull(controller) {
+          controller.enqueue(chunk())
+        },
+      }),
+      text: async () => {
+        textCalls += 1
+        return 'x'.repeat(17 * 1024 * 1024)
+      },
+    }),
+  })
+  assert.equal(oversized.ok, false)
+  assert.equal(textCalls, 0, 'the body is streamed; text() never materialises it')
+  assert.equal(oversized.reason, 'body too large (>16777216 bytes)', '16 MB is the cap')
+
+  // A declared body size is refused before a byte of it is read at all.
+  let bodyReads = 0
+  const declared = await fetchJson('https://x.test', {
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-length': String(64 * 1024 * 1024) }),
+      body: {
+        getReader() {
+          bodyReads += 1
+          throw new Error('the body must not be read when its declared length is too large')
+        },
+      },
+      text: async () => '',
+    }),
+  })
+  assert.equal(declared.ok, false)
+  assert.equal(declared.reason, 'body too large (>16777216 bytes)')
+  assert.equal(bodyReads, 0, 'an oversized declared length stops the read before a byte is taken')
+
+  // A streamed body under the cap decodes across chunk boundaries and parses.
+  const encoder = new TextEncoder()
+  const small = await fetchJson('https://x.test', {
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('{"pad":"'))
+          controller.enqueue(encoder.encode('ok"}'))
+          controller.close()
+        },
+      }),
+      text: async () => {
+        throw new Error('text() must not be used for a stream')
+      },
+    }),
+  })
+  assert.equal(small.ok, true)
+  assert.deepEqual(small.json, { pad: 'ok' })
+})
+
+test('a price save that cannot reach the disk is reported, not claimed', () => {
+  const { service, path, cleanup } = makeService()
+  try {
+    // The atomic writer renames `<path>.tmp-<pid>` into place, so a directory
+    // sitting on that name makes the write fail the way a full disk would.
+    mkdirSync(`${path}.tmp-${process.pid}`)
+    const saved = service.saveOverrides({ models: { 'acme/new-flash': { input: 0.42 } } })
+    assert.equal(saved.ok, false, 'the page must not be told the value was saved')
+    assert.equal(saved.error, 'could not store the price overrides')
+    // The value is still served from memory; it is the disk that refused it.
+    assert.equal(service.read().vendors[0].models[0].prices.input, 0.42)
+  } finally {
+    cleanup()
+  }
+})
+
+test('a rate quoted against another base is a failed fetch, and the USD rate stays', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'token-ledger-rates-'))
+  const path = join(dir, 'rates.json')
+  try {
+    const first = createRatesService({
+      path,
+      options: { source: 'openrouter', fetchImpl: stubFetch().fetchImpl, modelsUrl: 'https://models.test/list', fxUrl: 'https://rates.test/latest' },
+    })
+    await first.refresh()
+    const good = first.read().fx.rate
+    assert.equal(good, 6.725314)
+
+    // An endpoint answering against EUR is not a USD rate: the refresh is a
+    // failed one and the last good USD rate keeps being served.
+    const euro = { ...FX, base_code: 'EUR', rates: { CNY: 7.8 } }
+    const second = createRatesService({
+      path,
+      options: { source: 'openrouter', fetchImpl: stubFetch({ fx: euro }).fetchImpl, modelsUrl: 'https://models.test/list', fxUrl: 'https://rates.test/latest' },
+    })
+    const outcome = await second.refresh({ reason: 'test' })
+    assert.match(outcome.fx, /^failed \(no usable rate/)
+    assert.equal(second.read().fx.rate, good, 'the USD rate on disk is kept')
+    assert.equal(second.read().fx.base, 'USD')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('cancelRefresh aborts the fetch in flight and lets the refresh settle', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'token-ledger-rates-'))
+  const path = join(dir, 'rates.json')
+  let calls = 0
+  let inflightSignal = null
+  let hang = true
+  const fetchImpl = (url, options) => {
+    calls += 1
+    if (hang) {
+      inflightSignal = options.signal
+      return new Promise((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })))
+      })
+    }
+    const payload = String(url).includes('rates.test') ? FX : MODELS
+    return Promise.resolve({ ok: true, status: 200, text: async () => JSON.stringify(payload) })
+  }
+  const service = createRatesService({
+    path,
+    options: { source: 'openrouter', fetchImpl, modelsUrl: 'https://models.test/list', fxUrl: 'https://rates.test/latest' },
+  })
+  try {
+    // Cancelling with nothing running is a promise that resolves, not a throw.
+    await service.cancelRefresh()
+
+    const pending = service.refresh({ reason: 'test' })
+    while (calls === 0) await new Promise((resolve) => setTimeout(resolve, 1))
+    assert.equal(inflightSignal.aborted, false, 'the request runs until it is cancelled')
+    const cancel = service.cancelRefresh()
+    assert.equal(typeof cancel.then, 'function', 'cancelling returns something awaitable')
+    const [outcome] = await Promise.all([pending, cancel])
+    assert.equal(inflightSignal.aborted, true, 'the fetch in flight is aborted')
+    assert.equal(outcome.catalogue, 'cancelled')
+    assert.equal(outcome.fx, 'cancelled')
+    assert.equal(calls, 1, 'a cancelled refresh does not go on to the other sources')
+
+    // The service is usable again: the in-flight slot is free once it settles.
+    hang = false
+    const after = await service.refresh({ reason: 'test' })
+    assert.match(after.catalogue, /^ok/)
+    assert.equal(service.read().catalogue.available, true)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a price typed for a model only the expanded list carries is reviewed and settleable', async () => {
+  const { service, cleanup } = makeService({ models: MODELS_MANY })
+  try {
+    await service.refresh()
+    const published = service.read().vendors.find((entry) => entry.vendor === 'acme').models.map((model) => model.id)
+    assert.deepEqual(published, ['acme/m5', 'acme/m4', 'acme/m3'], 'the head is the three newest')
+
+    // `acme/m1` is served by the expansion and described by the same fetch, so
+    // it is reviewed and counted like a published row — and, above all, it does
+    // not appear as a second "acme" group with its prices converted as dollars.
+    service.saveOverrides({ models: { 'acme/m1': { input: 9 } } })
+    const after = service.read()
+    const acme = after.vendors.filter((entry) => entry.vendor === 'acme')
+    assert.equal(acme.length, 1, 'the vendor appears once')
+    assert.equal(acme[0].manualOnly, undefined)
+    assert.equal(after.overriddenModels, 1)
+    assert.deepEqual(after.pending.map((entry) => entry.id), ['acme/m1'])
+    assert.deepEqual(after.pending[0].fields, [{ key: 'input', manual: 9, official: 0.1 }])
+
+    // "Keep mine" records the official number for that row too, so the
+    // disagreement settles instead of standing forever.
+    const kept = service.saveOverrides({ keep: { 'acme/m1': ['input'] } })
+    assert.equal(kept.ok, true)
+    assert.equal(kept.saved.kept, 1)
+    assert.deepEqual(service.read().pending, [], 'the answer settles the disagreement')
+    assert.equal(service.readVendor('acme').models.find((model) => model.id === 'acme/m1').prices.input, 9, 'the expanded list serves the typed price')
   } finally {
     cleanup()
   }

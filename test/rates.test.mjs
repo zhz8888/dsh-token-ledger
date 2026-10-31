@@ -431,7 +431,13 @@ test('parseFx reads the rate and its own update time', () => {
   assert.equal(parseFx({ rates: { CNY: 0 } }), undefined)
   assert.equal(parseFx({ rates: { CNY: 'x' } }), undefined)
   assert.equal(parseFx(undefined), undefined)
-  assert.equal(parseFx({ rates: { CNY: 7 } }).updatedAt, null, 'a missing update time is not invented')
+  // The response names the currency its rates are quoted against, and only a
+  // USD answer is the USD rate the bill multiplies dollars by.
+  assert.equal(parseFx({ base_code: 'EUR', rates: { CNY: 7.8 } }), undefined, 'another base is not a USD rate')
+  assert.equal(parseFx({ base_code: 'CNY', rates: { CNY: 7.8 } }), undefined, 'not even when the pair is the one wanted')
+  const missingBase = parseFx({ rates: { CNY: 7 } })
+  assert.equal(missingBase.base, 'USD', 'a missing base is read as USD, the documented default')
+  assert.equal(missingBase.updatedAt, null, 'a missing update time is not invented')
 })
 
 test('a hand-entered price outranks a fetched one and is marked as such', () => {
@@ -613,6 +619,26 @@ test('a fetched row and an orphan override never duplicate the same model', () =
   assert.equal(acmeGroups[1].manualOnly, true)
   assert.deepEqual(acmeGroups[1].models.map((model) => model.id), ['acme/never-listed'])
   assert.equal(acmeGroups[0].models.filter((model) => model.id === 'acme/new-flash').length, 1)
+})
+
+test('a typed price for a model only the full list carries is reviewed, not published as a hand-only group', () => {
+  // `acme/ancient` is described by the fetch but not published (the head is the
+  // three newest). A typed price for it disagrees with a fetched row, so it is
+  // reviewed and counted like a head row — and it must not become a second
+  // "acme" group, which the page would draw as a vendor with no catalogue (and,
+  // for a vendor that quotes in yuan, convert as if it were quoted in dollars).
+  const vendors = parseCatalogue(cataloguePayload()).vendors
+  const result = applyOverrides({ vendors, overrides: { models: { 'acme/ancient': { input: 9 } } } })
+
+  const acme = result.vendors.filter((entry) => entry.vendor === 'acme')
+  assert.equal(acme.length, 1, 'the vendor appears once')
+  assert.equal(acme[0].manualOnly, undefined)
+  assert.equal(acme[0].models.some((model) => model.id === 'acme/ancient'), false, 'the published head is unchanged')
+  assert.equal(result.overriddenModels, 1, 'the typed price is counted')
+  assert.equal(result.pending.length, 1)
+  assert.equal(result.pending[0].id, 'acme/ancient')
+  assert.equal(result.pending[0].vendor, 'acme')
+  assert.deepEqual(result.pending[0].fields, [{ key: 'input', manual: 9, official: 0.05 }])
 })
 
 test('clearing an orphan override removes its row entirely', () => {
