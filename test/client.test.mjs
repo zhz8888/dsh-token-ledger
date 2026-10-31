@@ -2065,11 +2065,18 @@ function renderBackupView(module, state = { status: 'ready', data: payload({ led
  *
  * @param {object} module - the loaded client module.
  * @param {object} [databases] - the database fetch state.
- * @param {(body: object) => void} [onAction] - the action handler.
+ * @param {(body: object) => unknown} [onAction] - the action handler, whose answer the card reads.
+ * @param {object} [draft] - a form draft to open the card with, as if "add" or "edit" had been pressed.
  * @returns {{ tree: unknown, asked: object[] }} the render and what it asked for.
  */
-function renderBackupWithDatabases(module, databases = { status: 'ready', connections: [], backups: [], busy: null, notice: null }, onAction = () => {}) {
+function renderBackupWithDatabases(module, databases = { status: 'ready', connections: [], backups: [], busy: null, notice: null }, onAction = () => {}, draft = null) {
   const asked = []
+  // The card is the only hook user in this tree, so priming its draft opens the
+  // form the way a click would. It is primed rather than clicked because the
+  // stand-in React does not re-render on a state change.
+  const priming = module.priming
+  priming.length = 0
+  if (draft !== null) priming.push(draft)
   const tree = expand(
     module.exports.BackupView({
       t: fakeT(),
@@ -2077,11 +2084,37 @@ function renderBackupWithDatabases(module, databases = { status: 'ready', connec
       databases,
       onDatabase: (body) => {
         asked.push(body)
-        onAction(body)
+        return onAction(body)
       },
     }),
   )
+  priming.length = 0
   return { tree, asked }
+}
+
+/**
+ * Render the section on the backup tab, so its own action handler is exercised.
+ *
+ * The view is handed the handler as a prop, but `busy` and `notice` are the
+ * section's own state — the only way to see what an action does while it is in
+ * flight is to render the section and click its buttons.
+ *
+ * @param {object} module - the loaded client module.
+ * @param {object} databases - the database state the card should render.
+ * @param {object} [draft] - a form draft to open the card with.
+ * @returns {{ tree: unknown }} the render.
+ */
+function renderSectionBackup(module, databases, draft) {
+  const priming = module.priming
+  priming.length = 0
+  // range, view, the overview state, the tab, rates, bill periods, bills, the
+  // open vendors, their lists, then the connections — and then the form's draft.
+  priming.push(DEFAULT, DEFAULT, { status: 'ready', data: payload(), error: null }, 'backup')
+  priming.push(DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, databases)
+  if (draft !== undefined) priming.push(draft)
+  const tree = expand(module.__section({ t: fakeT() }))
+  priming.length = 0
+  return { tree }
 }
 
 /**
@@ -2228,6 +2261,131 @@ test('a connection with no password yet says the page has none', () => {
     notice: null,
   })
   assert.ok(hasText(collectText(tree), 'dbEmpty'), 'the page says there is none rather than showing an empty card')
+})
+
+test('a failed connection read is shown as a failure, not as "no connections"', () => {
+  const { module } = loadWithSection()
+
+  // A read that has not answered is not an empty list either: the section starts
+  // at idle, and the card must not claim there is nothing before the host says so.
+  const loading = collectText(renderBackupWithDatabases(module, { status: 'idle', connections: [], backups: [], busy: null, notice: null }).tree)
+  assert.ok(hasText(loading, 'loading'), 'a read that has not answered says it is loading')
+  assert.equal(hasText(loading, 'dbEmpty'), false, 'and does not claim the list is empty')
+
+  const failed = collectText(renderBackupWithDatabases(module, { status: 'error', error: 'HTTP 500', connections: [], backups: [], busy: null, notice: null }).tree)
+  assert.ok(hasText(failed, 'unavailable'), 'the card says the read is unavailable')
+  assert.ok(hasText(failed, 'HTTP 500'), 'and carries the host’s own words')
+  assert.equal(hasText(failed, 'dbEmpty'), false, 'a refused read is not a claim that there is nothing')
+
+  const empty = collectText(renderBackupWithDatabases(module, { status: 'ready', connections: [], backups: [], busy: null, notice: null }).tree)
+  assert.ok(hasText(empty, 'dbEmpty'), 'only a read that worked may say there is none')
+})
+
+test('a connection entry the file half-wrote renders as dashes instead of throwing', () => {
+  const { module } = loadWithSection()
+  const { tree } = renderBackupWithDatabases(module, {
+    status: 'ready',
+    connections: [
+      // Every field but the id is missing — the shape a hand-edited or older
+      // databases.json can hold, and the host's reader keeps it.
+      { id: 'half-written' },
+      // An engine this build does not know: a dash rather than a guessed label.
+      { id: 'odd', type: 'sqlite', name: 'Odd', host: 'db', port: 5432, database: 'app', user: 'app' },
+    ],
+    backups: [],
+    busy: null,
+    notice: null,
+  })
+  const text = collectText(tree)
+  assert.ok(hasText(text, '—:— / —'), 'the missing fields are dashes, not "undefined"')
+  assert.equal(hasText(text, 'undefined'), false)
+  const chips = findAllByClass(tree, 'tl-chip-text').map((chip) => collectText(chip).join(''))
+  assert.deepEqual(chips, ['—', '—'], 'an engine it cannot name is a dash, not a key and not a crash')
+
+  // Editing it still opens a usable form: the select falls back to a known
+  // engine and the text fields to empty strings, so no controlled input is
+  // handed undefined.
+  module.recorder.setState = null
+  findButtons(tree, 'dbEdit')[0].props.onClick()
+  assert.equal(module.recorder.setState.type, 'mysql', 'an unknown engine falls back to the first one the page can dump')
+  assert.equal(module.recorder.setState.name, '')
+})
+
+test('every database action holds the card while it is in flight', async () => {
+  const { module } = loadWithSection()
+  const connection = { id: 'gitea', name: 'Gitea', type: 'mariadb', host: '127.0.0.1', port: 3306, database: 'gitea', user: 'gitea', hasPassword: true }
+  const databases = { status: 'ready', connections: [connection], backups: [], busy: null, notice: null }
+  const realFetch = globalThis.fetch
+  // A request that never answers: the state right after the click is the one
+  // under test, and a second press has to find the buttons held.
+  globalThis.fetch = () => new Promise(() => {})
+  try {
+    const { tree } = renderSectionBackup(module, databases)
+    for (const [label, busy] of [
+      ['dbTest', 'test:gitea'],
+      ['dbDump', 'dump:gitea'],
+      ['dbRemove', 'remove:gitea'],
+      ['dbRefresh', 'refresh:'],
+    ]) {
+      module.recorder.setState = null
+      findButtons(tree, label)[0].props.onClick()
+      assert.equal(module.recorder.setState?.busy, busy, `${label} holds the card while it is in flight`)
+    }
+
+    // And it lets go when the host answers: a card left busy would never be
+    // usable again, and a failure has to release it just the same.
+    globalThis.fetch = async (url, options) => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, connections: [connection], backups: [] }),
+    })
+    module.recorder.setState = null
+    findButtons(tree, 'dbTest')[0].props.onClick()
+    assert.equal(module.recorder.setState?.busy, 'test:gitea', 'the press holds the card at once')
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(module.recorder.setState?.busy, null, 'and the answer releases it')
+
+    // A save does too, so a second press cannot send a second connection.
+    const draft = { type: 'mysql', name: 'gitea', host: '127.0.0.1', port: '3306', database: 'gitea', user: 'gitea', password: '', dumpPath: '' }
+    const withForm = renderSectionBackup(module, databases, draft)
+    module.recorder.setState = null
+    findButtons(withForm.tree, 'dbSave')[0].props.onClick()
+    assert.equal(module.recorder.setState?.busy, 'save:', 'a save holds the card while it is in flight')
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
+
+test('a save the host accepts closes the form, and a refused one leaves it open', async () => {
+  const { module } = loadWithSection()
+  const draft = { type: 'mysql', name: 'gitea', host: '127.0.0.1', port: '3306', database: 'gitea', user: 'gitea', password: 'hunter2', dumpPath: '' }
+  const databases = { status: 'ready', connections: [], backups: [], busy: null, notice: null }
+
+  // A form left open over a saved connection is one press of "save" away from
+  // creating a second one under a suffixed name, so the accepted save closes it.
+  const accepted = renderBackupWithDatabases(module, databases, async () => true, draft)
+  const save = findButtons(accepted.tree, 'dbSave')[0]
+  assert.ok(save !== undefined, 'the open form carries a save button')
+  module.recorder.setState = 'untouched'
+  save.props.onClick()
+  assert.deepEqual(accepted.asked[0], { action: 'save', connection: draft })
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(module.recorder.setState, null, 'the draft is cleared once the host has the connection')
+
+  // An edit is the same save, so it closes its form too rather than leaving the
+  // edited connection open to be saved again.
+  const editing = renderBackupWithDatabases(module, databases, async () => true, { ...draft, id: 'gitea' })
+  assert.ok(hasText(collectText(editing.tree), 'dbEditConnection'), 'the form is the editing one')
+  module.recorder.setState = 'untouched'
+  findButtons(editing.tree, 'dbSave')[0].props.onClick()
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(module.recorder.setState, null, 'an accepted edit closes the form as well')
+
+  const refused = renderBackupWithDatabases(module, databases, async () => false, draft)
+  module.recorder.setState = 'untouched'
+  findButtons(refused.tree, 'dbSave')[0].props.onClick()
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(module.recorder.setState, 'untouched', 'a refused save leaves the draft to be corrected')
 })
 
 test('a summarised session line names itself, says it is a summary, and the export is not shortened', () => {

@@ -765,6 +765,43 @@ test('the database card renders its connections under the real React', { skip },
   assert.equal(html.includes('password="'), false, 'no password field carries a value')
 })
 
+test('a half-written connection renders as dashes under the real React', { skip }, () => {
+  // The connections are a file, and the host's reader keeps an entry whose only
+  // field is its id. Rendering it must not throw: one bad row would take the
+  // whole settings section with it.
+  const exports = loadClient()
+  const { html, complaints } = renderComponent(exports.BackupView, {
+    state: { status: 'ready', data: { ledgerUpdatedAt: new Date(2026, 2, 31, 12, 0, 0).getTime() }, error: null },
+    databases: {
+      status: 'ready',
+      connections: [{ id: 'half-written' }, { id: 'odd', type: 'sqlite', name: 'Odd', host: 'db', port: 5432, database: 'app', user: 'app' }],
+      backups: [],
+      busy: null,
+      notice: null,
+    },
+    onDatabase: () => {},
+  })
+  assert.deepEqual(complaints, [], 'React reported a problem with the rendered tree')
+  assert.ok(html.includes('—:— / —'), 'a field the file did not carry is a dash')
+  // The engine chip names nothing rather than leaking a key or an undefined.
+  assert.equal(html.includes('dbTypesqlite'), false)
+  assert.equal(html.includes('undefined'), false)
+})
+
+test('a failed connection read says so instead of claiming there is nothing', { skip }, () => {
+  const exports = loadClient()
+  const { html, complaints } = renderComponent(exports.BackupView, {
+    state: { status: 'ready', data: { ledgerUpdatedAt: new Date(2026, 2, 31, 12, 0, 0).getTime() }, error: null },
+    databases: { status: 'error', error: 'HTTP 500', connections: [], backups: [], busy: null, notice: null },
+    onDatabase: () => {},
+  })
+  assert.deepEqual(complaints, [], 'React reported a problem with the rendered tree')
+  assert.ok(html.includes('class="tl-error"'), 'the failure uses the danger style')
+  assert.ok(html.includes('unavailable'), 'the card says the read is unavailable')
+  assert.ok(html.includes('HTTP 500'), 'and carries the host’s own words')
+  assert.equal(html.includes('dbEmpty'), false, 'a refused read is not a claim that there is nothing')
+})
+
 test('the bill shows both halves of the input, the money and what went unpriced', { skip }, () => {
   const exports = loadClient()
   const withUnpriced = billPayload({
