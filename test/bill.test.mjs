@@ -30,6 +30,7 @@ import {
   rangeBounds,
   shortSessionId,
   subscriptionShare,
+  unpricedOf,
   workspaceName,
 } from '../lib/bill.js'
 import { cacheHitRate } from '../lib/overview.js'
@@ -52,7 +53,12 @@ function usage(date, sessionId, model, peak, offPeak, calls = 1) {
     sessionId,
     model,
     calls,
-    ...counters(peak.inputTokens + offPeak.inputTokens, peak.outputTokens + offPeak.outputTokens, peak.cacheReadTokens + offPeak.cacheReadTokens),
+    ...counters(
+      peak.inputTokens + offPeak.inputTokens,
+      peak.outputTokens + offPeak.outputTokens,
+      peak.cacheReadTokens + offPeak.cacheReadTokens,
+      peak.cacheWriteTokens + offPeak.cacheWriteTokens,
+    ),
     peak: { ...peak, totalTokens: peak.inputTokens + peak.outputTokens + peak.cacheReadTokens + peak.cacheWriteTokens, reasoningTokens: 0 },
     offPeak: { ...offPeak, totalTokens: offPeak.inputTokens + offPeak.outputTokens + offPeak.cacheReadTokens + offPeak.cacheWriteTokens, reasoningTokens: 0 },
   }
@@ -323,7 +329,10 @@ test('the CSV carries the bill, with the currency on every row and a total per s
   assert.equal(Buffer.from(csv, 'utf8').subarray(0, 3).toString('hex'), 'efbbbf', 'the export starts with a UTF-8 byte-order mark')
   assert.equal(csv.charCodeAt(0), 0xfeff)
   const lines = csv.replace(/^\ufeff/, '').trim().split('\r\n')
-  assert.equal(lines[0], 'dimension,range,group,calls,cacheReadInput,uncachedInput,output,cacheWriteInput,cacheHitRate,cost,currency,billing,usagePricedCost')
+  assert.equal(
+    lines[0],
+    'dimension,range,group,calls,cacheReadInput,uncachedInput,output,cacheWriteInput,cacheHitRate,cost,currency,billing,usagePricedCost,unpricedTokens',
+  )
   assert.equal(lines.length, bill.rows.length + 2, 'a header, every row, and a total')
   for (const line of lines.slice(1)) assert.ok(line.includes(',CNY'), `no currency on: ${line}`)
   assert.ok(lines.at(-1).startsWith('vendor,month,TOTAL,'))
@@ -696,3 +705,117 @@ test('a plan that has not started does not zero out the usage it never covered',
 })
 
 void none
+
+test('a plan that names no vendor is still charged in the total', () => {
+  // A hand-written config may leave `vendor` out. The plan then covers no vendor's
+  // usage, but it is still money spent: charging it nowhere would make the bill
+  // under-report by exactly the plan, and the subscription view — which lists the
+  // plan as a row — would no longer add up to the total.
+  const anonymous = buildBill({
+    snapshot: snapshot(),
+    catalogue: catalogue(),
+    subscriptions: [{ plan: '没有 vendor 的包月', amount: 199, currency: 'CNY', startedAt: '2026-09-01' }],
+    by: 'subscription',
+    range: 'month',
+    now: SEPTEMBER,
+  })
+  const planRow = anonymous.rows.find((row) => row.plan === true)
+  closeTo(planRow.cost, 199, 'the plan itself')
+  closeTo(anonymous.totals.subscriptionCost, 199)
+  // Everything not on a plan is still billed its usage: 74.2 in the fixture.
+  closeTo(anonymous.totals.totalCost, 199 + 74.2)
+  closeTo(anonymous.rows.reduce((sum, row) => sum + row.cost, 0), anonymous.totals.totalCost, 'the rows add up to the total')
+})
+
+test('a plan whose vendor priced to zero is still charged', () => {
+  // A free or zero-priced model gives the plan no usage cost to allocate against, so
+  // `billed()` cannot carry the fee on a row. The fee is still owed — "present in the
+  // vendor table but worth zero" is not the same answer as "carried by a row".
+  const base = catalogue()
+  const free = {
+    ...base,
+    vendors: [
+      { ...base.vendors[0], models: base.vendors[0].models.map((model) => ({ ...model, prices: { input: 0, output: 0, cacheRead: 0, cacheWrite: null } })) },
+      base.vendors[1],
+    ],
+  }
+  const bill = buildBill({
+    snapshot: snapshot(),
+    catalogue: free,
+    subscriptions: [{ vendor: 'deepseek', plan: '已经包月的免费模型', amount: 199, currency: 'CNY', startedAt: '2026-09-01' }],
+    by: 'subscription',
+    range: 'month',
+    now: SEPTEMBER,
+  })
+  closeTo(bill.totals.subscriptionCost, 199)
+  // The zero-priced vendor's own row costs nothing; the plan is what is owed, plus
+  // the vendor that is not on a plan.
+  closeTo(bill.rows.find((row) => row.plan === true).cost, 199)
+  closeTo(bill.totals.totalCost, 199 + 70)
+  closeTo(bill.rows.reduce((sum, row) => sum + row.cost, 0), bill.totals.totalCost, 'the rows add up to the total')
+})
+
+test('a bucket the price list leaves unstated is reported, not charged at zero', () => {
+  // DeepSeek's published row has no cache-write price. Cache writes are real usage;
+  // multiplying them by an assumed zero would make the bill too small by an amount
+  // nobody can see, which is what the unpriced list exists to prevent.
+  const withCacheWrite = snapshot({
+    usage: [usage('2026-09-10', 's1', 'deepseek-official/deepseek-v4-flash', counters(1_000_000, 0, 0, 500_000), counters(0, 0, 0, 0))],
+  })
+  const deepseek = entryFor(priceEntries(catalogue()), 'deepseek-official/deepseek-v4-flash').entry
+  const missing = unpricedOf(withCacheWrite.usage[0], deepseek)
+  assert.equal(missing.tokens, 500_000)
+  assert.deepEqual(missing.buckets, ['cacheWriteTokens'])
+  // The priced buckets are still charged: one million input at 2 per million.
+  assert.equal(costOf(withCacheWrite.usage[0], deepseek), 2)
+
+  const bill = buildBill({ snapshot: withCacheWrite, catalogue: catalogue(), by: 'vendor', range: 'month', now: SEPTEMBER })
+  const row = bill.rows.find((entry) => entry.label === 'deepseek-official')
+  assert.equal(row.unpricedTokens, 500_000)
+  closeTo(row.cost, 2, 'only the tokens with a price are charged')
+  assert.equal(bill.totals.unpricedCost, true)
+  assert.equal(bill.unpriced.length, 1)
+  assert.match(bill.unpriced[0].reason, /no price for cacheWriteTokens/)
+  assert.equal(bill.unpriced[0].tokens, 500_000)
+})
+
+test('the CSV names the tokens it could not price instead of leaving them looking free', () => {
+  const withUnknown = snapshot({
+    usage: [...snapshot().usage, usage('2026-09-12', 's1', 'nobody/mystery-1', counters(5_000_000, 0), counters(0, 0), 4)],
+  })
+  const bill = buildBill({ snapshot: withUnknown, catalogue: catalogue(), by: 'model', range: 'month', now: SEPTEMBER })
+  const lines = billToCsv(bill).replace(/^\ufeff/, '').trim().split('\r\n')
+  const row = lines.find((line) => line.includes('nobody/mystery-1')).split(',')
+  assert.equal(row[9], '0.0000', 'the cost is zero because there is no price, not because the tokens were free')
+  assert.equal(row[11], 'usage+unpriced', 'the billing column says the row is partly unpriceable')
+  assert.equal(row[13], '5000000', 'and how many tokens that was')
+  const total = lines.find((line) => line.includes('TOTAL')).split(',')
+  assert.equal(total[13], '5000000', 'the section total carries the same count')
+  // A fully priced row says nothing about unpriced tokens.
+  const priced = lines.find((line) => line.includes('openai-official')).split(',')
+  assert.equal(priced[11], 'usage')
+  assert.equal(priced[13], '0')
+})
+
+test('a field that a spreadsheet would read as a formula is exported as text', () => {
+  // A session title is arbitrary text, and a cell beginning with `=` is how a
+  // spreadsheet is told to evaluate a formula. Quoting alone does not stop that, so
+  // the field gets the spreadsheet's own text marker first, before RFC 4180 quoting.
+  const bill = buildBill({
+    snapshot: snapshot({
+      sessions: [{ sessionId: 's1', cwd: null, title: '=SUM(A1,B1)', calls: 2 }],
+      usage: [usage('2026-09-10', 's1', 'deepseek-official/deepseek-v4-flash', counters(1_000_000, 0), counters(0, 0), 2)],
+    }),
+    catalogue: catalogue(),
+    by: 'session',
+    range: 'month',
+    now: SEPTEMBER,
+  })
+  const lines = billToCsv(bill).replace(/^\ufeff/, '').trim().split('\r\n')
+  const row = lines.find((line) => line.includes('SUM(A1,B1)'))
+  // The comma still needs quoting, and the apostrophe has to be inside those quotes.
+  assert.ok(row.includes(`,"'=SUM(A1,B1)",`), row)
+  // Ordinary fields are untouched: the currency and the billing word are not quoted.
+  assert.ok(row.includes(',CNY,usage,'), row)
+  assert.ok(lines.at(-1).startsWith('session,month,TOTAL,'), lines.at(-1))
+})

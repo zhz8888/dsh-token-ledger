@@ -3,8 +3,8 @@
  *
  * The frame walker is the one piece of this package that parses a binary
  * format, so it gets structural tests: exact round trips, several frames per
- * file, and a truncated file that must fail loudly rather than yield half a
- * ledger.
+ * file, and a killed writer's torn final frame — which the frame walker refuses
+ * while the reader keeps the committed prefix before it.
  *
  * @module dsh-token-ledger/test/session-log.test
  */
@@ -57,12 +57,39 @@ test('rejects a buffer that does not start with a frame', () => {
   assert.throws(() => splitZstdFrames(Buffer.from([1, 2, 3, 4, 5])), /no zstd magic/)
 })
 
-test('rejects a truncated frame instead of returning partial data', () => {
-  const buffer = encodeSessionLog(withSeq(ALPHA_EVENTS), { eventsPerFrame: 2 })
-  // Chopping bytes off the end must not decode as a shorter log.
-  assert.throws(() => decodeSessionLogBuffer(buffer.subarray(0, buffer.length - 5)), /truncated/)
-  // And a buffer cut to just the magic number is not silently empty.
-  assert.throws(() => decodeSessionLogBuffer(buffer.subarray(0, 4)), /truncated/)
+/**
+ * A killed writer leaves a file whose last frame was never finished. The file
+ * walker stays strict about its own contract, but the reader keeps the frames
+ * that were completed: those events are committed and counted, and dropping the
+ * whole session over the tail is the loss this tolerance exists to prevent.
+ */
+test('a torn final frame is dropped and the frames before it still decode', () => {
+  const events = withSeq(ALPHA_EVENTS)
+  const buffer = encodeSessionLog(events, { eventsPerFrame: 2 })
+  const frames = splitZstdFrames(buffer)
+  const last = frames[frames.length - 1]
+  const torn = buffer.subarray(0, buffer.length - 5)
+
+  // `frameLengthAt` and `splitZstdFrames` keep their strict semantics: a caller
+  // that asked for the frames is told the file does not end on a boundary.
+  assert.throws(() => frameLengthAt(torn, last.offset), /truncated/)
+  assert.throws(() => splitZstdFrames(torn), /truncated/)
+
+  // The reader keeps the complete prefix: only the torn frame's two events are
+  // missing, rather than the whole log failing.
+  assert.deepEqual(decodeSessionLogBuffer(torn), events.slice(0, events.length - 2))
+
+  // A buffer that holds no complete frame decodes to nothing — the writer never
+  // finished anything — instead of failing the session.
+  assert.deepEqual(decodeSessionLogBuffer(buffer.subarray(0, 4)), [])
+})
+
+test('structurally invalid bytes are still refused, not read as a short log', () => {
+  assert.throws(() => decodeSessionLogBuffer(Buffer.from('not zstd at all')), /no zstd magic/)
+  // Garbage after complete frames is not a torn tail: a torn tail is unfinished,
+  // and a frame that never starts is a different file.
+  const good = encodeSessionLog(withSeq(ALPHA_EVENTS.slice(0, 2)), { eventsPerFrame: 2 })
+  assert.throws(() => decodeSessionLogBuffer(Buffer.concat([good, Buffer.from([1, 2, 3, 4, 5])])), /no zstd magic/)
 })
 
 test('parseJsonLines skips the torn trailing line a killed writer leaves', () => {

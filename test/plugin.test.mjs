@@ -16,6 +16,7 @@ import { test } from 'node:test'
 
 import { apply, name } from '../lib/index.js'
 import { ledgerPaths, loadLedger } from '../lib/store.js'
+import { logGenerationOf } from '../lib/session-logs.js'
 import {
   ALPHA_EVENTS,
   BETA_EVENTS,
@@ -341,7 +342,9 @@ test('a fork carrying its boundary marker is cut after it', async () => {
   const events = withSeq([
     { type: 'session', id: 'sess-fork', parentSession: 'sess-parent', isSeeded: true },
     BETA_EVENTS[2],
-    { type: 'session/end-seed', time: DAY3, data: {} },
+    // The harness tags the marker that closes the inherited prefix; only a tagged
+    // one is the cut.
+    { type: 'session/end-seed', time: DAY3, data: { inherited: true } },
     BETA_EVENTS[4],
   ])
   const persistence = {
@@ -670,11 +673,12 @@ function writeSessionLog(home, sessionId, events) {
 
 test('folds the history already on disk, with no host service to ask', async () => {
   const home = mkdtempSync(join(tmpdir(), 'token-ledger-logs-'))
+  let mounted
   try {
     writeSessionLog(home, 'sess-disk', ALPHA_EVENTS)
     // No `sessionPersistence` service at all: the disk is the only source this
     // install has, and a fresh install is exactly the case it has to serve.
-    const mounted = await mount({ home })
+    mounted = await mount({ home })
     await mounted.settle()
     await mounted.harness.dispose()
 
@@ -688,12 +692,15 @@ test('folds the history already on disk, with no host service to ask', async () 
       JSON.stringify(mounted.harness.logs),
     )
   } finally {
+    mounted?.cleanup()
     rmSync(home, { recursive: true, force: true })
   }
 })
 
 test('a second start carries the cursor over instead of folding the log again', async () => {
   const home = mkdtempSync(join(tmpdir(), 'token-ledger-logs-'))
+  let first
+  let second
   try {
     const path = writeSessionLog(home, 'sess-disk', ALPHA_EVENTS)
     // Dated back, because a log is written after its newest event: the pass dates
@@ -703,12 +710,12 @@ test('a second start carries the cursor over instead of folding the log again', 
     const earlier = new Date(Date.now() - 5000)
     utimesSync(path, earlier, earlier)
 
-    const first = await mount({ home })
+    first = await mount({ home })
     await first.settle()
     await first.harness.dispose()
     assert.equal(loadLedger(ledgerPaths(home, {}).ledger).totals.totalTokens, 6220)
 
-    const second = await mount({ home })
+    second = await mount({ home })
     await second.settle()
     await second.harness.dispose()
 
@@ -722,12 +729,16 @@ test('a second start carries the cursor over instead of folding the log again', 
       JSON.stringify(second.harness.logs),
     )
   } finally {
+    second?.cleanup()
+    first?.cleanup()
     rmSync(home, { recursive: true, force: true })
   }
 })
 
 test('a log that grew since the last pass is folded again, and only its new events count', async () => {
   const home = mkdtempSync(join(tmpdir(), 'token-ledger-logs-'))
+  let first
+  let second
   try {
     const path = writeSessionLog(home, 'sess-disk', ALPHA_EVENTS)
     // Dated back so that the second pass below is decided by "the log has not
@@ -735,7 +746,7 @@ test('a log that grew since the last pass is folded again, and only its new even
     const earlier = new Date(Date.now() - 5000)
     utimesSync(path, earlier, earlier)
 
-    const first = await mount({ home })
+    first = await mount({ home })
     await first.settle()
     await first.harness.dispose()
     assert.equal(loadLedger(ledgerPaths(home, {}).ledger).totals.totalTokens, 6220)
@@ -747,7 +758,7 @@ test('a log that grew since the last pass is folded again, and only its new even
     const after = new Date(Date.now() + 5000)
     utimesSync(path, after, after)
 
-    const second = await mount({ home })
+    second = await mount({ home })
     await second.settle()
     await second.harness.dispose()
 
@@ -755,15 +766,18 @@ test('a log that grew since the last pass is folded again, and only its new even
     assert.equal(snapshot.totals.totalTokens, 6220 + 15, 'the new step, and not the old ones again')
     assert.equal(snapshot.totals.calls, 6)
   } finally {
+    second?.cleanup()
+    first?.cleanup()
     rmSync(home, { recursive: true, force: true })
   }
 })
 
 test('a session folded from disk is not advanced by the live event list', async () => {
   const home = mkdtempSync(join(tmpdir(), 'token-ledger-logs-'))
+  let mounted
   try {
     writeSessionLog(home, 'sess-disk', ALPHA_EVENTS)
-    const mounted = await mount({ home })
+    mounted = await mount({ home })
     await mounted.settle()
 
     // The same id arrives live. Its cursor indexes the log's rows, and the live
@@ -777,16 +791,18 @@ test('a session folded from disk is not advanced by the live event list', async 
     assert.equal(snapshot.totals.totalTokens, 6220, 'the disk fold owns this session')
     assert.equal(snapshot.sessions.length, 1)
   } finally {
+    mounted?.cleanup()
     rmSync(home, { recursive: true, force: true })
   }
 })
 
 test('a session the live path already folded is not folded again from its log', async () => {
   const home = mkdtempSync(join(tmpdir(), 'token-ledger-logs-'))
+  let mounted
   try {
     // The log carries more than the live session has produced so far.
     writeSessionLog(home, 'sess-live', [...ALPHA_EVENTS, ...EXTRA_STEP])
-    const mounted = await mount({ home, liveSessions: [fakeSession('sess-live', withSeq(ALPHA_EVENTS))] })
+    mounted = await mount({ home, liveSessions: [fakeSession('sess-live', withSeq(ALPHA_EVENTS))] })
     await mounted.settle()
     await mounted.harness.dispose()
 
@@ -796,20 +812,119 @@ test('a session the live path already folded is not folded again from its log', 
     assert.equal(snapshot.totals.totalTokens, 6220)
     assert.equal(snapshot.totals.calls, 5)
   } finally {
+    mounted?.cleanup()
     rmSync(home, { recursive: true, force: true })
   }
 })
 
 test('the disk fold can be turned off on its own', async () => {
   const home = mkdtempSync(join(tmpdir(), 'token-ledger-logs-'))
+  let mounted
   try {
     writeSessionLog(home, 'sess-disk', ALPHA_EVENTS)
-    const mounted = await mount({ home, config: { backfillLogs: false } })
+    mounted = await mount({ home, config: { backfillLogs: false } })
     await mounted.settle()
     await mounted.harness.dispose()
 
     assert.equal(loadLedger(ledgerPaths(home, {}).ledger).totals.totalTokens, 0)
   } finally {
+    mounted?.cleanup()
     rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('a log whose last frame was never finished still counts its committed events', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'token-ledger-logs-'))
+  let mounted
+  try {
+    const directory = join(home, 'sessions', '--C-proj--', 'sess-torn')
+    mkdirSync(directory, { recursive: true })
+    // Frames of three: the unfinished last frame carries the compaction (1,580)
+    // and the final step (130). A killed writer leaves exactly this, and the three
+    // calls before it are still the session's durable record.
+    const encoded = encodeSessionLog(withSeq(ALPHA_EVENTS), { eventsPerFrame: 3 })
+    writeFileSync(join(directory, 'session.jsonl.zstd'), encoded.subarray(0, encoded.length - 5))
+
+    mounted = await mount({ home })
+    await mounted.settle()
+    await mounted.harness.dispose()
+
+    const snapshot = loadLedger(ledgerPaths(home, {}).ledger)
+    assert.equal(snapshot.totals.totalTokens, 4510, 'the committed prefix, not zero')
+    assert.equal(snapshot.totals.calls, 3)
+    assert.ok(
+      !mounted.harness.logs.some(([level, args]) => level === 'warn' && String(args[0]).includes('could not decode')),
+      JSON.stringify(mounted.harness.logs),
+    )
+  } finally {
+    mounted?.cleanup()
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('only the newest generation of a session log is folded', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'token-ledger-logs-'))
+  let mounted
+  try {
+    const directory = join(home, 'sessions', '--C-proj--', 'sess-gen')
+    mkdirSync(directory, { recursive: true })
+    // The harness keeps every generation of a session it migrated: the historical
+    // `session.jsonl.zstd` still holds the same session's first rows and only the
+    // highest-numbered file is the record. Folding both advanced one cursor
+    // through two different arrays.
+    writeFileSync(join(directory, 'session.jsonl.zstd'), encodeSessionLog(withSeq(ALPHA_EVENTS.slice(0, 5)), { eventsPerFrame: 2 }))
+    writeFileSync(join(directory, 'session.v4.jsonl.zstd'), encodeSessionLog(withSeq(ALPHA_EVENTS), { eventsPerFrame: 3 }))
+
+    mounted = await mount({ home })
+    await mounted.settle()
+    await mounted.harness.dispose()
+
+    const snapshot = loadLedger(ledgerPaths(home, {}).ledger)
+    assert.equal(snapshot.totals.totalTokens, 6220)
+    assert.equal(snapshot.totals.calls, 5)
+  } finally {
+    mounted?.cleanup()
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('a log file name names its format generation', () => {
+  assert.equal(logGenerationOf('session.jsonl.zstd'), 0)
+  assert.equal(logGenerationOf('session.v4.jsonl.zstd'), 4)
+  assert.equal(logGenerationOf('session.v12.jsonl.zstd'), 12)
+  // `.v0` and zero-padded numbers are not canonical generation names, and a file
+  // that names no generation is not one.
+  assert.equal(logGenerationOf('session.v0.jsonl.zstd'), undefined)
+  assert.equal(logGenerationOf('session.v04.jsonl.zstd'), undefined)
+  assert.equal(logGenerationOf('session.jsonl'), undefined)
+  assert.equal(logGenerationOf('backup.jsonl.zstd'), undefined)
+})
+
+test('dispose waits for the startup work it began', async () => {
+  let release
+  const gate = new Promise((resolve) => {
+    release = resolve
+  })
+  const persistence = {
+    list: async () => {
+      await gate
+      return [{ id: 'sess-alpha' }]
+    },
+    inspect: async (id) => ({ meta: { id }, events: withSeq(ALPHA_EVENTS) }),
+  }
+  const mounted = await mount({ persistence })
+  try {
+    // The backfill is still waiting on storage when the host is asked to stop. The
+    // dispose must not settle before that work lands, or the ledger written on the
+    // way out would be missing the history it was about to fold.
+    const disposing = mounted.harness.dispose()
+    release()
+    await disposing
+
+    const snapshot = loadLedger(ledgerPaths(mounted.home, {}).ledger)
+    assert.equal(snapshot.totals.totalTokens, 6220)
+    assert.equal(snapshot.totals.calls, 5)
+  } finally {
+    mounted.cleanup()
   }
 })

@@ -187,6 +187,120 @@ test('a tampered ledger is caught', () => {
   }
 })
 
+test('a difference the totals hide is caught bucket by bucket', () => {
+  const { home, cleanup } = makeHome({ 'sess-alpha': ALPHA_EVENTS })
+  try {
+    assert.equal(invoke(['rebuild', '--home', home, '--write', '--quiet']).code, 0)
+    const path = ledgerPaths(home, {}).ledger
+    const snapshot = loadLedger(path)
+    snapshot.updatedAt = Date.now() + 60000
+    // Move the input tokens of one usage row into the cache-read bucket, adjusting
+    // only the derived total of that period so every total in the file stays equal.
+    // Cache reads are the cheap bucket, so the row now costs a fraction of what it did
+    // with exactly the same number of tokens.
+    const row = snapshot.usage.find((entry) => entry.peak.inputTokens > 0 || entry.offPeak.inputTokens > 0)
+    const period = row.peak.inputTokens > 0 ? 'peak' : 'offPeak'
+    const moved = row[period].inputTokens
+    const move = (counters) => {
+      counters.inputTokens -= moved
+      counters.cacheReadTokens += moved
+    }
+    move(row[period])
+    row[period].totalTokens = row[period].inputTokens + row[period].outputTokens + row[period].cacheReadTokens + row[period].cacheWriteTokens
+    // The same swap in the day and model tables, whose totals are derived from these
+    // buckets: their totals stay equal, so only a bucket comparison can see it.
+    move(snapshot.daily.find((entry) => entry.date === row.date))
+    move(snapshot.models.find((entry) => entry.model === row.model))
+    writeFileSync(path, JSON.stringify(snapshot))
+
+    const audited = invoke(['audit', '--home', home, '--json'])
+    const parsed = JSON.parse(audited.stdout)
+    assert.equal(audited.code, 1, audited.stdout + audited.stderr)
+    assert.equal(parsed.matches, false)
+    assert.equal(parsed.totals.deltaTokens, 0, 'the swap changes no total at all')
+    // The day and model rows keep their totals and name the buckets that moved instead.
+    for (const table of [parsed.days, parsed.models]) {
+      assert.equal(table.length, 1)
+      assert.equal(table[0].delta, 0)
+      assert.deepEqual(Object.keys(table[0].buckets).sort(), ['cacheReadTokens', 'inputTokens'])
+    }
+    // The usage table says which side of the vendor's window moved, which is what the
+    // bill multiplies by a price.
+    assert.equal(parsed.usage.length, 1)
+    assert.deepEqual(parsed.usage[0].fields.sort(), [`${period}.cacheReadTokens`, `${period}.inputTokens`])
+
+    const human = invoke(['audit', '--home', home])
+    assert.match(human.stdout, /usage rows \(peak\/offPeak split\)/)
+  } finally {
+    cleanup()
+  }
+})
+
+test('a session whose log grew after the fold is behind, not corrupt', () => {
+  const { home, cleanup } = makeHome({ 'sess-alpha': ALPHA_EVENTS })
+  try {
+    assert.equal(invoke(['rebuild', '--home', home, '--write', '--quiet']).code, 0)
+    const path = ledgerPaths(home, {}).ledger
+    const snapshot = loadLedger(path)
+    // A ledger built from the logs says so: the watermark is what the audit uses to
+    // know how much of each log the file has seen.
+    assert.equal(typeof snapshot.logsFoldedAt, 'number', 'a rebuild records that every log was folded')
+    // The host folded the logs at mount and has not folded again since. Its ledger
+    // file, saved on every live change, is newer than the session's last event; the
+    // fold's watermark is older. Only the watermark can tell "not read yet" from "the
+    // file contradicts the logs", so the audit must use it for a log-owned session.
+    const newest = Math.max(...ALPHA_EVENTS.filter((event) => typeof event.time === 'number').map((event) => event.time))
+    snapshot.logsFoldedAt = newest - 1000
+    snapshot.updatedAt = Date.now() + 60000
+    // Drop the tokens of the alpha fixture's last call, the way a fold that stopped
+    // before it would have.
+    const session = snapshot.sessions.find((row) => row.sessionId === 'sess-alpha')
+    session.inputTokens -= 100
+    session.outputTokens -= 30
+    session.totalTokens -= 130
+    writeFileSync(path, JSON.stringify(snapshot))
+
+    const audited = invoke(['audit', '--home', home, '--json'])
+    const parsed = JSON.parse(audited.stdout)
+    assert.equal(audited.code, 0, audited.stdout + audited.stderr)
+    assert.equal(parsed.equal, false, 'the file really is behind')
+    assert.equal(parsed.matches, true, 'behind the fold is not corruption')
+    assert.ok(parsed.pending.some((row) => row.key === 'sess-alpha'))
+    assert.equal(parsed.stale.length, 0)
+
+    // The same difference for a session the live path owns is a real one: that source
+    // is current as of when the ledger was written, and the ledger is newer.
+    snapshot.origins['sess-alpha'] = 'session'
+    writeFileSync(path, JSON.stringify(snapshot))
+    const live = invoke(['audit', '--home', home, '--json'])
+    assert.equal(live.code, 1, live.stdout + live.stderr)
+    assert.equal(JSON.parse(live.stdout).matches, false)
+  } finally {
+    cleanup()
+  }
+})
+
+test('a path option with no value is a usage error, not a silent default', () => {
+  const { home, cleanup } = makeHome({})
+  try {
+    for (const argv of [['summary', '--home'], ['rebuild', '--write', '--home'], ['audit', '--ledger'], ['export', '--out'], ['summary', '--home=']]) {
+      const result = invoke(argv)
+      assert.equal(result.code, 2, argv.join(' '))
+      assert.match(result.stderr, /missing value for --(home|ledger|out)/, argv.join(' '))
+    }
+    // The next option must not be eaten as a value: `--home --quiet` is how a ledger
+    // used to land in a directory called `--quiet`, with `--quiet` itself lost.
+    const swallowed = invoke(['rebuild', '--write', '--home', '--quiet'])
+    assert.equal(swallowed.code, 2)
+    assert.match(swallowed.stderr, /missing value for --home/)
+    // A real value still parses, in both spellings.
+    assert.match(invoke(['summary', '--home', home]).stderr, /no ledger at/)
+    assert.match(invoke(['summary', `--home=${home}`]).stderr, /no ledger at/)
+  } finally {
+    cleanup()
+  }
+})
+
 test('JSON output is machine readable', () => {
   const { home, cleanup } = makeHome({ 'sess-alpha': ALPHA_EVENTS })
   try {
@@ -282,20 +396,33 @@ test('a corrupt ledger is treated as an error, not silently as zero', () => {
   }
 })
 
-test('a truncated session log is skipped with a warning, not a crash', () => {
+test('a torn final frame is read up to the frames before it, and an unreadable log warns', () => {
+  // The session-log reader keeps the frames a killed writer finished: those events
+  // are the session's durable record, and dropping the whole session over a torn
+  // tail would lose usage that was really recorded. A file that is not a log at all
+  // is still skipped with a warning rather than folded as if it were empty.
   const { home, cleanup } = makeHome({ 'sess-alpha': ALPHA_EVENTS })
   try {
-    const directory = join(home, 'sessions', '--workspace--', 'sess-torn')
-    mkdirSync(directory, { recursive: true })
+    const torn = join(home, 'sessions', '--workspace--', 'sess-torn')
+    mkdirSync(torn, { recursive: true })
     const encoded = encodeSessionLog(withSeq(ALPHA_EVENTS), { eventsPerFrame: 2 })
-    writeFileSync(join(directory, 'session.jsonl.zstd'), encoded.subarray(0, encoded.length - 7))
+    writeFileSync(join(torn, 'session.jsonl.zstd'), encoded.subarray(0, encoded.length - 7))
+    const broken = join(home, 'sessions', '--workspace--', 'sess-broken')
+    mkdirSync(broken, { recursive: true })
+    writeFileSync(join(broken, 'session.jsonl.zstd'), 'not a zstd log')
 
     const rebuilt = invoke(['rebuild', '--home', home])
     assert.equal(rebuilt.code, 0, rebuilt.stderr)
+    // Three logs walked, one of them unreadable; the torn log still contributes the
+    // events its completed frames hold.
+    assert.match(rebuilt.stdout, /3 session log\(s\)/)
+    assert.match(rebuilt.stdout, /34 events/)
     assert.match(rebuilt.stdout, /1 unreadable/)
     assert.match(rebuilt.stderr, /warning: could not decode/)
-    // The healthy session still counted.
-    assert.match(rebuilt.stdout, /6,220/)
+    // The healthy session is counted in full (6,220) and the torn log contributes the
+    // events its completed frames hold (6,090) — the two calls in its lost frame are
+    // the only thing missing.
+    assert.match(rebuilt.stdout, /12,310/)
   } finally {
     cleanup()
   }

@@ -200,10 +200,35 @@ test('a live session takes its route from the prefix it skips', () => {
     { type: 'assistant/message', time: DAY1, data: { turn: 1, step: 1, usage: { inputTokens: 700, outputTokens: 30 } } },
   ]
   const ledger = new UsageLedger()
-  ledger.adoptSession(fakeSession('sess-live', events, { firstLiveSeq: 1 }))
+  ledger.adoptSession(fakeSession('sess-live', events, { inheritedEventCount: 1 }))
   assert.equal(ledger.calls, 1)
   assert.equal(ledger.totals.totalTokens, 730)
   assert.deepEqual([...ledger.models.keys()], ['acme/acme/one'])
+})
+
+/**
+ * Regression: a resumed Session is built from a seed holding its own full stored
+ * log, so its `firstLiveSeq` is that log's length rather than an inherited
+ * prefix. Using it as a cut skipped the session's whole history — and because the
+ * live path then owned the session, neither the log fold nor the backfill counted
+ * that history again.
+ */
+test('a resumed live session is folded from its first event, not from its seed length', () => {
+  const ledger = new UsageLedger()
+  const session = fakeSession('sess-resumed', withSeq(ALPHA_EVENTS))
+  session.firstLiveSeq = 5
+  ledger.adoptSession(session)
+  assert.equal(ledger.calls, ALPHA_EXPECTED.calls)
+  assert.equal(ledger.totals.totalTokens, ALPHA_EXPECTED.totalTokens)
+})
+
+test('a live fork is cut at the inherited count it declares', () => {
+  const ledger = new UsageLedger()
+  ledger.adoptSession(fakeSession('sess-fork', withSeq(BETA_EVENTS), { inheritedEventCount: BETA_INHERITED }))
+  assert.equal(ledger.calls, BETA_EXPECTED.calls)
+  assert.equal(ledger.totals.totalTokens, BETA_EXPECTED.totalTokens)
+  // The route is still read out of the skipped prefix.
+  assert.deepEqual([...ledger.models.keys()], [BETA_EXPECTED.modelKey])
 })
 
 test('snapshot and restore round-trip without double counting', () => {
@@ -283,6 +308,30 @@ test('CSV export has a header and one row per entity', () => {
   assert.throws(() => ledger.toCsv('nope'), /unknown CSV table/)
 })
 
+test('a replaced attempt leaves no zero row behind in the tables', () => {
+  // A retry can move a step to another provider. The first attempt's counters are
+  // subtracted back out, and its model row would otherwise stay behind at zero —
+  // a model the bill would list with no tokens and a line the CSV would carry.
+  const ledger = new UsageLedger()
+  ledger.adoptHistory({
+    sessionId: 'sess-retry',
+    events: withSeq([
+      { type: 'request/header', time: DAY1, data: { header: { config: { provider: 'acme', model: 'one' } } } },
+      { type: 'assistant/message', time: DAY1, data: { turn: 1, step: 1, usage: { inputTokens: 1000, outputTokens: 100 } } },
+      { type: 'request/header', time: DAY1, data: { header: { config: { provider: 'backup', model: 'two' } } } },
+      { type: 'assistant/message', time: DAY1, data: { turn: 1, step: 1, usage: { inputTokens: 1200, outputTokens: 120 } } },
+    ]),
+  })
+  assert.equal(ledger.calls, 1)
+  assert.equal(ledger.totals.totalTokens, 1320)
+
+  const snapshot = ledger.snapshot()
+  assert.deepEqual(snapshot.models.map((row) => row.model), ['backup/two'])
+  assert.equal(snapshot.daily.length, 1)
+  assert.equal(snapshot.sessions.length, 1)
+  assert.ok(!ledger.toCsv('models').includes('acme/one'), 'the replaced model row is not exported')
+})
+
 test('format renders the totals a user reads', () => {
   const text = fold(ALPHA_EVENTS, 'sess-alpha').format()
   assert.match(text, /Token ledger/)
@@ -291,27 +340,81 @@ test('format renders the totals a user reads', () => {
   assert.match(text, /deepseek-official\/deepseek-v4-flash/)
 })
 
-test('inheritedCut locates a fork boundary by the marker, not by a count', () => {
+test('inheritedCut cuts at the last tagged marker, not at the first end-seed', () => {
   const events = [
     { type: 'session', id: 'child' },
     { type: 'assistant/message', time: DAY1, data: { turn: 1, step: 1, usage: { inputTokens: 999 } } },
-    { type: 'session/end-seed', time: DAY1, data: {} },
+    { type: 'session/end-seed', time: DAY1, data: { inherited: true } },
     { type: 'assistant/message', time: DAY1, data: { turn: 2, step: 1, usage: { inputTokens: 5 } } },
   ]
 
   // A resume folds in full, whatever number storage offers.
   assert.equal(inheritedCut({ header: { id: 'x' }, events, inheritedEventCount: 2 }), 0)
 
-  // A fork cuts after the marker, and the declared count cannot override it.
+  // A fork cuts after its tagged marker, and the declared count cannot override it.
   assert.equal(inheritedCut({ header: { parentSession: 'p', isSeeded: true }, events, inheritedEventCount: 2 }), 3)
   assert.equal(inheritedCut({ header: { parentSession: 'p', isSeeded: true }, events, inheritedEventCount: 9999 }), 3)
 
-  // No marker: a declared count is used only when it can index this list.
+  // An untagged marker is a resume point inside the prefix, not this session's
+  // boundary: only the declared count is left to use.
+  const untagged = events.map((event, index) => (index === 2 ? { type: 'session/end-seed', time: DAY1, data: {} } : event))
+  assert.equal(inheritedCut({ header: { parentSession: 'p', isSeeded: true }, events: untagged, inheritedEventCount: 2 }), 2)
+  assert.equal(inheritedCut({ header: { parentSession: 'p', isSeeded: true }, events: untagged, inheritedEventCount: 9999 }), 0)
+
+  // Two tagged markers — a fork of a fork carries its parent's — and the last one
+  // is the child's own cut.
+  const nested = [
+    { type: 'assistant/message', time: DAY1, data: { turn: 1, step: 1, usage: { inputTokens: 999 } } },
+    { type: 'session/end-seed', time: DAY1, data: { inherited: true } },
+    { type: 'assistant/message', time: DAY1, data: { turn: 2, step: 1, usage: { inputTokens: 5 } } },
+    { type: 'session/end-seed', time: DAY1, data: { inherited: true } },
+    { type: 'assistant/message', time: DAY1, data: { turn: 3, step: 1, usage: { inputTokens: 7 } } },
+  ]
+  assert.equal(inheritedCut({ header: { parentSession: 'p', isSeeded: true }, events: nested }), 4)
+
+  // No tagged marker: a declared count is used only when it can index this list.
   const noMarker = events.filter((event) => event.type !== 'session/end-seed')
   assert.equal(inheritedCut({ header: { parentSession: 'p', isSeeded: true }, events: noMarker, inheritedEventCount: 2 }), 2)
   assert.equal(inheritedCut({ header: { parentSession: 'p', isSeeded: true }, events: noMarker, inheritedEventCount: 9999 }), 0)
   assert.equal(inheritedCut({ header: { parentSession: 'p', isSeeded: true }, events: [] }), 0)
   assert.equal(inheritedCut(), 0)
+})
+
+/**
+ * Regression: a fork's inherited prefix can carry earlier `session/end-seed`
+ * records. A resumed source session appends an untagged one every time it is
+ * continued, and a fork of a fork copies its parent's tagged one, so the child's
+ * own boundary is only the **last** tagged marker. Cutting at the first marker of
+ * any kind recounted the parent's calls, which the parent's own log already
+ * accounts for.
+ */
+test('a fork of a continued session is cut at its own tagged marker', () => {
+  const parentOwn = [
+    { type: 'request/header', time: DAY1, data: { header: { config: { provider: 'acme', model: 'one' } } } },
+    { type: 'assistant/message', time: DAY1, data: { turn: 1, step: 1, usage: { inputTokens: 1000, outputTokens: 100 } } },
+    // The parent was continued at this point: an untagged marker of its own.
+    { type: 'session/end-seed', time: DAY1, data: {} },
+    { type: 'assistant/message', time: DAY1, data: { turn: 2, step: 1, usage: { inputTokens: 2000, outputTokens: 200 } } },
+  ]
+  const child = withSeq([
+    { type: 'session', id: 'child', parentSession: 'parent', isSeeded: true },
+    ...parentOwn,
+    // The child's own boundary, and then its own work.
+    { type: 'session/end-seed', time: DAY1, data: { inherited: true } },
+    { type: 'assistant/message', time: DAY1, data: { turn: 3, step: 1, usage: { inputTokens: 3000, outputTokens: 300 } } },
+  ])
+
+  // The parent's resume marker is record 3; the child's boundary is record 5.
+  assert.equal(inheritedCut({ header: child[0], events: child }), 6)
+
+  const ledger = new UsageLedger()
+  ledger.adoptHistory({
+    sessionId: 'child',
+    events: child,
+    inheritedEventCount: inheritedCut({ header: child[0], events: child }),
+  })
+  assert.equal(ledger.calls, 1)
+  assert.equal(ledger.totals.totalTokens, 3300)
 })
 
 /**
@@ -367,7 +470,8 @@ test('a fork whose declared count overshoots the array is still counted', () => 
     // The parent's history, as the compact row form presents it.
     { type: 'assistant/message', time: DAY1, data: { turn: 1, step: 1, usage: { inputTokens: 400000, outputTokens: 1 } } },
     { type: 'text-chunks', time: DAY1, data: { texts: ['a', 'b'] } },
-    { type: 'session/end-seed', time: DAY1, data: {} },
+    // A real fork marker is tagged; only a tagged one locates the inherited cut.
+    { type: 'session/end-seed', time: DAY1, data: { inherited: true } },
     // The child's own call, which must be counted.
     { type: 'assistant/message', time: DAY1, data: { turn: 2, step: 1, usage: { inputTokens: 700, outputTokens: 30 } } },
   ])
