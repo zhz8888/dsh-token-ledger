@@ -9,6 +9,9 @@ node_modules/
 token-ledger/
 .ledger-local/
 
+# Scratch output from the tools in tools/.
+.tmp/
+
 # Editor and OS noise.
 .DS_Store
 Thumbs.db
