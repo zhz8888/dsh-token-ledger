@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.0] - 2026-11-01
 
 ### Added
 
@@ -40,6 +40,105 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and no install scripts, and still reads nothing but the session logs and the
   provider names — plus the database servers you point it at, when you ask it
   to.
+
+### Fixed
+
+- **A backup download that fails no longer takes the host process down.** The
+  `.sql` response was piped without an `error` listener, so a directory named
+  like a dump, or a file removed between the listing and the click, raised an
+  uncaught `EISDIR`/`ENOENT` that ended the host. The failure is reported and the
+  response destroyed, `readBackup` refuses anything that is not a regular file,
+  and a `HEAD` answers from metadata without opening the file at all.
+
+- **The password files are written in the format the dump tool reads.**
+  PostgreSQL's passfile was a raw `host:port:database:user:password` line, so an
+  IPv6 host (`::1`) or a password containing `:` could never authenticate; the
+  five fields are escaped now. MySQL's option file escapes line breaks, and the
+  connection validator refuses a password carrying a control character.
+
+- **Windows finds the dump tools.** `findExecutable` looked only for the bare
+  name, so `mysqldump.exe` on `PATH` was reported missing and the backup page
+  said no tool was installed. It now consults `PATHEXT`.
+
+- **The backup page says what actually happened.** A failed read is no longer
+  drawn as “no connections”, a connection missing a field renders as a dash
+  instead of crashing the section, a saved connection closes its form instead of
+  creating a suffixed duplicate on a second press, every write disables the card
+  while it is in flight, and an unreadable `databases.json` is reported instead
+  of being replaced by the next save. A read that finds the route unmounted says
+  the host process needs a restart instead of reporting a failure to read usage
+  data.
+
+- **A fork is cut at its tagged boundary, not at its first end-seed.**
+  `inheritedCut` took the first `session/end-seed` without looking at
+  `data.inherited`, so forking a session that had been resumed — or forking a
+  fork — recounted part of the parent's history. The last marker tagged
+  `inherited` is the cut now, and an exact inherited count still wins when the
+  caller has one.
+
+- **A resumed live session is folded from the beginning.** `adoptSession`
+  treated `firstLiveSeq` as an inherited-prefix length, but a resumed session's
+  seed is its own stored log; the first fold skipped the history it was meant to
+  count, and marked the session so neither the log fold nor the persistence
+  backfill would ever add it back. Only the harness's inherited count, or a
+  stored header's declared seed length, is a cut now.
+
+- **A torn final frame keeps the readable prefix.** The frame walk threw on a
+  truncated tail, so a writer killed mid-frame made its whole session count as
+  zero. Complete frames are decoded, and the unfinished last frame is kept when
+  Zstandard can still decode it and dropped otherwise.
+
+- **Only the newest generation of a session log is folded.** A session that
+  outlived a storage format keeps its predecessors beside the current
+  `session.vN.jsonl.zstd`; folding every file advanced one cursor through two
+  different arrays, and the refresh path could read a stale generation. The
+  highest generation is the record.
+
+- **A plan share no row can carry is still charged.** A plan without a vendor,
+  or one whose vendor's usage priced to zero, disappeared from the bill's
+  `totalCost`; the remainder is added back, and the subscription view's rows now
+  sum to it.
+
+- **Audit compares the buckets, not only the total.** A ledger whose tokens were
+  rearranged between `input` and `cacheRead`, or between peak and off-peak —
+  the same token count, a different bill — passed `audit`. The diff now compares
+  the four buckets per aggregate and each usage row's split, and its `pending`
+  decision for a log-owned session uses `logsFoldedAt` rather than the ledger's
+  own save time.
+
+- **The bill names the tokens it could not price.** A bucket whose price the
+  vendor does not state was charged at zero and left out of the unpriced list;
+  those tokens are counted as unpriced now, and the CSV export carries an
+  `unpricedTokens` column with a `usage+unpriced` marker. A CSV export also
+  ignores `fold=small`, and leading `=`, `+`, `-` or `@` in a field is
+  neutralised so a spreadsheet does not evaluate it.
+
+- **Hand-entered prices stay with their provider.** Editing a model that only
+  the expanded list shows published it as a second, currency-less manual group
+  — displayed multiplied by the exchange rate — instead of staying on its
+  vendor; it stays there and enters the review list now. A non-USD base from a
+  custom `fxUrl` is refused rather than used as USD→CNY, a response body is
+  capped while it arrives instead of after it has been buffered, and a write
+  that cannot reach the disk reports failure instead of pretending to save.
+
+- **Long-lived work is finished by the plugin's own shutdown.** Disposal now
+  waits for the log fold and the backfill it started, cancels a price refresh
+  in flight, and writes once afterwards, instead of leaving a later timer to
+  write a shared file after the plugin is gone.
+
+- **The CLI rejects a path option with no value.** `--home`, `--ledger` and
+  `--out` used to swallow the next token or fall back to the default; they are a
+  usage error now, so `rebuild --write --home --quiet` can no longer write a
+  ledger into a directory named `--quiet`.
+
+- **A dump timeout escalates and settles.** The tool is asked to stop, killed
+  outright when it ignores that, and the exit is awaited before the answer is
+  reported; the timers that settle the answer keep the event loop alive.
+
+- **The repository’s asar helpers read the archive correctly.** The data
+  section starts at `8 + header pickle size`, not `16`, and `unpacked` entries
+  are copied from beside the archive, so the tools no longer extract shifted
+  files or fail on a fifth of a real archive.
 
 ## [1.1.5] - 2026-10-31
 
@@ -1213,7 +1312,8 @@ so both now have regression tests.
 - Zero runtime dependencies, zero peer dependencies and no install scripts, so
   the package installs without a build step.
 
-[Unreleased]: https://github.com/zhz8888/dsh-token-ledger/compare/v1.1.5...HEAD
+[Unreleased]: https://github.com/zhz8888/dsh-token-ledger/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/zhz8888/dsh-token-ledger/compare/v1.1.5...v1.2.0
 [1.1.5]: https://github.com/zhz8888/dsh-token-ledger/compare/v1.1.4...v1.1.5
 [1.1.4]: https://github.com/zhz8888/dsh-token-ledger/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/zhz8888/dsh-token-ledger/compare/v1.1.2...v1.1.3

@@ -8,7 +8,7 @@
 
 | | 是什么 | 什么时候用 |
 | --- | --- | --- |
-| **推 tag** | `git push origin v1.1.5` 触发 `release.yml`，用 OIDC **trusted publishing** 发布——任何地方都不存放 token。 | 包**已经**存在于 npm、且已为本仓库配好 Trusted Publisher 之后的每一次发布。 |
+| **推 tag** | `git push origin v1.2.0` 触发 `release.yml`，用 OIDC **trusted publishing** 发布——任何地方都不存放 token。 | 包**已经**存在于 npm、且已为本仓库配好 Trusted Publisher 之后的每一次发布。 |
 | **手动发布** | 在本仓库里执行 `npm publish`，用你自己的 npm 登录与一次性验证码。 | 一个包的**第一次**发布。OIDC 无法为一个还不存在的包配置。 |
 
 `@zhz8888/dsh-token-ledger` 正是它的第一次发布，所以要手动发一次。这一页就是手动那条路；
@@ -43,7 +43,7 @@ Node 22 自带 npm 10，根本做不了 OIDC 交换。
 
 ```bash
 git status --short          # 必须什么都不输出
-git log --oneline -1        # release: 1.1.5
+git log --oneline -1        # release: 1.2.0
 ```
 
 **2. 确认这个版本还没在 registry 上。**
@@ -70,7 +70,7 @@ tag 与访问级别：
 
 ```
 npm notice Publishing to https://registry.npmjs.org/ with tag latest and public access (dry-run)
-+ @zhz8888/dsh-token-ledger@1.1.5
++ @zhz8888/dsh-token-ledger@1.2.0
 ```
 
 如果第一行写的是那个镜像，就停下：registry 的覆盖没生效。
@@ -112,7 +112,7 @@ tarball 已经上线，而读的那一侧还没跟上。那是 registry 的传�
 3. 保存。之后每次发布就是推一个 tag：
 
 ```bash
-git tag v1.1.5 && git push origin v1.1.5
+git tag v1.2.0 && git push origin v1.2.0
 ```
 
 `release.yml` 会跑测试与打包检查、确认 tag 与 `package.json` 一致、发布、把 tarball
