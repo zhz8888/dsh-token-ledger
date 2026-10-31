@@ -83,7 +83,7 @@ the section still appears and its labels fall back to the keys.
 **A tag push publishes. No token is stored anywhere.**
 
 ```bash
-git tag v1.1.4 && git push origin v1.1.4
+git tag v1.1.5 && git push origin v1.1.5
 ```
 
 The tag must match the version in `package.json` — the workflow refuses to publish
