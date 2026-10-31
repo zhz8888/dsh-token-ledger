@@ -9,8 +9,9 @@ English | [中文](SETTINGS-PAGE.zh.md)
 The browser half adds a **Token ledger** section to the settings sidebar. At the
 top it carries a view switcher in the host's own plugin-market shape — a rounded
 track with the selected view's card on it, the card sliding to the next view —
-and three views: **Overview**, **Rates** and **Bill**. The switcher takes the
-arrow keys as well as the pointer, and only the selected view is a tab stop.
+and four views: **Overview**, **Rates**, **Bill** and **Backup**. The switcher
+takes the arrow keys as well as the pointer, and only the selected view is a tab
+stop.
 
 The switcher is **pinned to the top of the section**: a bill with four groupings
 and five periods each is a long page, and the way back to the other views stays
@@ -202,6 +203,20 @@ period**, so this month by workspace can sit above today by model.
   partially delivered requests, and it does not know about a plan's included quota
   beyond what you tell it in the config.
 
+### Backup
+
+- **What is exported is the ledger itself.** A bill is the ledger read at one price
+  list; a file is a copy of it, and a copy is what a backup is — so the export
+  buttons live on this page and not at the top right of the bill.
+- **Two formats, one set of data.** The CSV is a table of one record per row, with a
+  UTF-8 BOM so Excel opens the Chinese text as it is; the JSON is the same data in a
+  structured form, with the fields the bill page shows. Both carry **four groupings ×
+  five periods** (workspace / session / model / vendor × this month / this year / the
+  last 7 days / today / all of it), which is more than the four periods on screen at
+  once. The export links carry no `fold`, so every session is in the file.
+- **The file is named for the day the data is from**, not the day it was downloaded:
+  a backup read later should say at a glance how old it is.
+
 The page reads four loopback-only routes: `GET /api/token-ledger/summary` for the
 overview, `GET|POST /api/token-ledger/rates` for prices and the rate,
 `GET /api/token-ledger/bill` for the bill, and `GET /api/token-ledger/i18n` for the
@@ -227,7 +242,7 @@ that hand-entered prices are entered **on that page**: there is no command-line
 equivalent yet, so a headless profile can read the usage ledger but cannot type a
 price.
 
-None of the three views is published through a settings namespace. That would need a schema —
+None of the four views is published through a settings namespace. That would need a schema —
 a real dependency, and this package has none — and would rewrite `settings.yaml` on
 every debounce with data that is derived and reproducible. The ledger file stays the
 only store of record; prices live in `rates.json` beside it.
@@ -238,7 +253,7 @@ only store of record; prices live in `rates.json` beside it.
 ## More documents
 
 - [How the numbers are counted](COUNTING.md) — the counting rules, forks versus resumes, and the audit
-- [The settings page](SETTINGS-PAGE.md) — the three views in full
+- [The settings page](SETTINGS-PAGE.md) — the four views in full
 - [Configuration](CONFIGURATION.md) — every key the plugin reads
 - [Compatibility](COMPATIBILITY.md) — which DSH it needs, and what it touches
 - [Development and releasing](DEVELOPMENT.md) — working on the plugin, and publishing it

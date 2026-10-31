@@ -136,7 +136,7 @@ git tag v1.1.4 && git push origin v1.1.4
 ## 更多文档
 
 - [这些数字是怎么数出来的](COUNTING.zh.md) —— 计数规则、fork 与 resume、以及审计
-- [设置页](SETTINGS-PAGE.zh.md) —— 三个页签的完整说明
+- [设置页](SETTINGS-PAGE.zh.md) —— 四个页签的完整说明
 - [配置](CONFIGURATION.zh.md) —— 插件会读到的每一个配置项
 - [兼容性](COMPATIBILITY.zh.md) —— 需要哪个 DSH，以及它会碰什么
 - [开发与发布](DEVELOPMENT.zh.md) —— 怎么改这个插件，以及怎么发布它

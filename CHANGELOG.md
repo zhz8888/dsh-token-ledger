@@ -6,10 +6,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **A backup page, and the exports moved onto it.** The section now carries a
+  fourth view, **Backup**, and the CSV and JSON export buttons have moved from
+  the top right of the bill onto it.
+
+  A bill is the ledger read at one price list; a file is a copy of it, and a
+  copy is what a backup is — so the exports belong on the backup page, and the
+  page is there to be the home for everything that keeps one. It says what the
+  file holds (four groupings × five periods, each grouping totalled on its own,
+  the periods overlapping so there is no total across them) and what the two
+  formats are: the CSV is a table of one record per row, with a UTF-8 BOM so
+  Excel opens the Chinese text as it is, and the JSON is the same data in a
+  structured form with the fields the bill page shows.
+
+  The file is named for the day the data is from rather than the day it was
+  downloaded, so a backup read later says at a glance how old it is.
+
 ### Changed
 
-- **The section's view switcher now looks like the plugin market's.** The three
-  buttons at the top of the settings section — Overview, Rates and Bill — were a
+- **The section's view switcher now looks like the plugin market's.** The buttons
+  at the top of the settings section — Overview, Rates, Bill and Backup — were a
   segmented strip of their own, drawn in colours the current host does not define,
   so it read as a different application from the page around it. They now carry the
   host's own plugin-market bar: a rounded track with the selected view's card on

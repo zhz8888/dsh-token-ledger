@@ -38,9 +38,9 @@ reach the real one:
 | `test/route.test.mjs` | 41 | all three routes: the loopback and origin guard, unsupported methods, the bill's grouping and range lists with their fallbacks (one section per request, twenty for an export), the CSV download and its filename, the overview's per-period costs and its degradation when there are no prices, and for the write half the JSON content-type requirement, malformed and oversized bodies, rejected patches, and the 500 paths |
 | `test/rates.test.mjs` | 27 | the pure pricing module: per-token to per-million scaling, newest-per-vendor selection for both sources, the curated vendor cap and its order, alias exclusion, the per-vendor provider-id mapping, own-models-before-hosted ordering, zero-price flagging, the FX parse, hand-entered values outranking fetched ones, orphan overrides, the adopt/keep decision, and the input validator |
 | `test/rates-service.test.mjs` | 13 | fetch, cache, schedule and source selection: a failed refresh keeps the last good value, overrides survive a restart, an invalid patch changes nothing, the timer runs and stops, every transport fault is reported instead of thrown, each source parses its own payload, an unknown source falls back, and a five-megabyte body is a real response rather than an attack |
-| `test/client.test.mjs` | 56 | the browser half through a stand-in loader: the module wrapper, the registration contract, formatting, heat levels, series slicing, all three views' rendering logic, the overview's estimated cost per range and per day (including the no-prices dash), the bill's four stacked sections with a period each, its export links and its per-section failure, the currency conversion and the USD fallback, per-vendor provenance, peak and off-peak rows, the bundled vendor marks, the column geometry that keeps model names visible, the zero-price marking, the patches each editor sends when its button is clicked, and that each view reads its route only when it is opened |
+| `test/client.test.mjs` | 56 | the browser half through a stand-in loader: the module wrapper, the registration contract, formatting, heat levels, series slicing, all four views' rendering logic, the overview's estimated cost per range and per day (including the no-prices dash), the bill's four stacked sections with a period each, its per-section failure, the backup page's export links and what it says the file holds, the currency conversion and the USD fallback, per-vendor provenance, peak and off-peak rows, the bundled vendor marks, the column geometry that keeps model names visible, the zero-price marking, the patches each editor sends when its button is clicked, and that each view reads its route only when it is opened |
 | `test/vendor-prices.test.mjs` | 9 | the vendor pricing-page adapters: the HTML helpers, a price written as `0.15元` and as `输入：0.5元`, DeepSeek's merged label cells and both time-of-day columns, Z.ai's storage column that sometimes says "Limited-time Free", Tencent's label-embedded prices, and a row per period |
-| `test/client-render.test.mjs` | 21 | the same views under the real React, asserting the actual markup, the bill's four cards, twenty period tabs, export URLs and money columns, and that the library raises no complaint |
+| `test/client-render.test.mjs` | 21 | the same views under the real React, asserting the actual markup, the bill's four cards, twenty period tabs, the backup page's export URLs and the bill's money columns, and that the library raises no complaint |
 | `test/providers.test.mjs` | 7 | the provider display names: the `providers:` block read out of a plugin-scoped settings file, quotes and comments and `~`-escaped names, several blocks merged, a name never guessed from a model list, a missing or unreadable file degrading to the provider id, and the cache window that keeps a poll from re-reading the file |
 | `test/slot-registration.test.mjs` | 8 | the registration fed into the real slot registry DSH ships |
 
@@ -1183,11 +1183,11 @@ useful:
 - **Provider billing agreement.** The ledger counts what the session log
   records. It makes no claim about what a provider invoices, which can differ
   for failed, retried or partially delivered requests.
-- **The rates view and the bill view in a real browser.** All three views are
+- **The rates view and the bill view in a real browser.** All four views are
   asserted under the real React, their markup is checked, and the bundle the
   browser receives was fetched from a running host — but no one has yet looked at
-  the **Rates** or **Bill** tab on screen. The 0.3.0 round of feedback came from
-  looking at the page; the rates and bill work has not had that pass. The bill's
+  the **Rates**, **Bill** or **Backup** tab on screen. The 0.3.0 round of feedback came from
+  looking at the page; the rates, bill and backup work has not had that pass. The
   CSV download in particular is asserted from the response headers and body, not
   by clicking the button in a browser, and the four stacked sections have not been
   looked at in a panel narrow enough to need their horizontal scroll. The vendor

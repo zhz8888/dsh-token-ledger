@@ -727,12 +727,20 @@ test('the bill view renders under real React without the library objecting', { s
 
 test('the export links carry every grouping over every period', { skip }, () => {
   const exports = loadClient()
-  const { html } = renderComponent(exports.BillView, billProps())
+  const { html, complaints } = renderComponent(exports.BackupView, {
+    state: { status: 'ready', data: { ledgerUpdatedAt: new Date(2026, 2, 31, 12, 0, 0).getTime() }, error: null },
+  })
+  assert.deepEqual(complaints, [])
   const hrefs = html.match(/href="[^"]*"/g)?.join(' ') ?? ''
   assert.ok(hrefs.includes('href="/api/token-ledger/bill?by=workspace,session,model,vendor&amp;range=month,year,week,today,all&amp;format=csv"'), hrefs)
   assert.ok(html.includes('download="token-bill-all-2026-03-31.csv"'))
   assert.ok(hrefs.includes('format=json'))
   assert.ok(html.includes('download="token-bill-all-2026-03-31.json"'))
+
+  // The bill page carries no export any more: a file is a copy of the ledger,
+  // and that belongs to the backup page.
+  const bill = renderComponent(exports.BillView, billProps())
+  assert.equal(bill.html.includes('token-bill-all-'), false, 'the bill page offers no file')
 })
 
 test('the bill shows both halves of the input, the money and what went unpriced', { skip }, () => {

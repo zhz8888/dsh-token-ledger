@@ -853,13 +853,13 @@ test('the view switcher is the market\'s bar: a track, a card on it, and the tab
   assert.equal(tablist.props['aria-label'], 'tabsLabel', 'the list says what it is')
 
   const tabs = findAllByClass(tree, 'tl-view-tab').filter((tab) => tab.type === 'button')
-  assert.equal(tabs.length, 3, 'one tab per view')
-  assert.deepEqual(tabs.map((tab) => collectText(tab)[0]), ['tabOverview', 'tabRates', 'tabBill'])
+  assert.equal(tabs.length, 4, 'one tab per view')
+  assert.deepEqual(tabs.map((tab) => collectText(tab)[0]), ['tabOverview', 'tabRates', 'tabBill', 'tabBackup'])
   // Only the selected view is a tab stop, so the reader walks the bar with the
   // arrow keys rather than tabbing through it.
-  assert.deepEqual(tabs.map((tab) => tab.props['aria-selected']), [true, false, false])
-  assert.deepEqual(tabs.map((tab) => tab.props.tabIndex), [0, -1, -1])
-  assert.deepEqual(tabs.map((tab) => tab.props['aria-controls']), ['tl-view-panel-overview', 'tl-view-panel-rates', 'tl-view-panel-bill'])
+  assert.deepEqual(tabs.map((tab) => tab.props['aria-selected']), [true, false, false, false])
+  assert.deepEqual(tabs.map((tab) => tab.props.tabIndex), [0, -1, -1, -1])
+  assert.deepEqual(tabs.map((tab) => tab.props['aria-controls']), ['tl-view-panel-overview', 'tl-view-panel-rates', 'tl-view-panel-bill', 'tl-view-panel-backup'])
 
   // The card that marks the selected view sits behind the tabs and slides to
   // the next column; the overview is the one on screen, so it starts at the
@@ -868,7 +868,7 @@ test('the view switcher is the market\'s bar: a track, a card on it, and the tab
   assert.ok(indicator, 'the card is there')
   assert.equal(indicator.props['aria-hidden'], 'true', 'and it is only a picture')
   assert.equal(indicator.props.style.transform, 'translateX(0%)')
-  assert.equal(indicator.props.style.width, 'calc((100% - 8px) / 3)', 'one column wide')
+  assert.equal(indicator.props.style.width, 'calc((100% - 8px) / 4)', 'one column wide')
 
   // The view the switcher shows is the panel the selected tab names.
   const panel = findByClass(tree, 'tl-panel')
@@ -925,10 +925,10 @@ test('the arrow keys walk the view switcher', () => {
   }
 
   assert.equal(press(tabs[0], 'ArrowRight').asked, 'rates', 'the right arrow takes the next view')
-  assert.equal(press(tabs[0], 'ArrowLeft').asked, 'bill', 'and the left one the last, because the bar wraps')
-  assert.equal(press(tabs[0], 'End').asked, 'bill', 'End is the last view')
+  assert.equal(press(tabs[0], 'ArrowLeft').asked, 'backup', 'and the left one the last, because the bar wraps')
+  assert.equal(press(tabs[0], 'End').asked, 'backup', 'End is the last view')
   assert.equal(press(tabs[0], 'Home').asked, 'overview', 'and Home the first')
-  assert.equal(press(tabs[2], 'ArrowRight').asked, 'overview', 'the bar wraps at its end too')
+  assert.equal(press(tabs[3], 'ArrowRight').asked, 'overview', 'the bar wraps at its end too')
   const other = press(tabs[0], 'a')
   assert.equal(other.asked, null, 'a key that is not a navigation key asks for nothing')
   assert.equal(other.prevented, false, 'and the browser is left to do whatever it does with it')
@@ -2032,6 +2032,22 @@ function renderBillView(module, bills, hooks = {}) {
 }
 
 /**
+ * Render the backup page.
+ *
+ * @param {object} module - the loaded client module.
+ * @param {object} [state] - the overview fetch state the page reads the date from.
+ * @returns {unknown} the render.
+ */
+function renderBackupView(module, state = { status: 'ready', data: payload({ ledgerUpdatedAt: new Date(2026, 2, 31, 12, 0, 0).getTime() }), error: null }) {
+  return expand(
+    module.exports.BackupView({
+      t: fakeT(),
+      state,
+    }),
+  )
+}
+
+/**
  * The section cards, in page order.
  *
  * `findAllByClass` matches a class fragment, and `tl-card-title` contains
@@ -2048,7 +2064,7 @@ test('the bill stacks every grouping, each with every period', () => {
   const { module } = loadWithSection()
   const tree = renderBillView(module, billStates())
   const text = collectText(tree)
-  for (const key of ['billByWorkspace', 'billBySession', 'billByModel', 'billByVendor', 'rangeMonth', 'rangeYear', 'rangeWeek', 'rangeToday', 'rangeAll', 'billExportAllCsv', 'billExportAllJson']) {
+  for (const key of ['billByWorkspace', 'billBySession', 'billByModel', 'billByVendor', 'rangeMonth', 'rangeYear', 'rangeWeek', 'rangeToday', 'rangeAll']) {
     assert.ok(hasText(text, key), key)
   }
 
@@ -2059,11 +2075,15 @@ test('the bill stacks every grouping, each with every period', () => {
   const tabs = findAllByClass(tree, 'tl-tab').filter((tab) => tab.type === 'button')
   assert.equal(tabs.length, 20, 'five periods in each of four sections')
   assert.equal(tabs.filter((tab) => tab.props['data-active'] === 'true').length, 4, 'one period is active per section')
+
+  // The export is not here any more: a file is a copy of the ledger, and that
+  // is the backup page's business, not the bill's.
+  assert.equal(findAllByClass(tree, 'tl-btn').length, 0, 'the bill page offers no export')
 })
 
-test('the export at the top carries every grouping over every period', () => {
+test('the backup page carries the exports, over every grouping and every period', () => {
   const { module } = loadWithSection()
-  const tree = renderBillView(module, billStates())
+  const tree = renderBackupView(module)
   const exports = findAllByClass(tree, 'tl-btn')
   assert.equal(exports.length, 2)
   assert.deepEqual(
@@ -2075,13 +2095,24 @@ test('the export at the top carries every grouping over every period', () => {
   )
   assert.equal(exports[0].props.download, 'token-bill-all-2026-03-31.csv')
   assert.equal(exports[1].props.download, 'token-bill-all-2026-03-31.json')
-  assert.ok(hasText(collectText(tree), 'billExportHint'), 'and the page says what the file contains')
-  // On the header row, so the two links stay in the top right corner however wide
-  // the page title's subtitle is.
-  const headerRows = findAllByClass(tree, 'tl-row-head')
-  assert.equal(headerRows.length, 1)
-  assert.equal(String(headerRows[0].props.className), 'tl-row tl-row-head')
-  assert.equal(countByClass(headerRows[0], 'tl-bill-actions'), 1, 'the export is on it')
+  // The file is named for the day the ledger was last written, so a backup
+  // read later says how old it is.
+  assert.ok(hasText(collectText(tree), 'backupUpdatedAt'), 'and the page says when the data is from')
+  assert.ok(hasText(collectText(tree), '2026-03-31'), 'which is that day')
+})
+
+test('the backup page says what the file holds', () => {
+  const { module } = loadWithSection()
+  const tree = renderBackupView(module)
+  const text = collectText(tree)
+  for (const key of ['backupTitle', 'backupExportTitle', 'backupContentsTitle', 'backupGroupings', 'backupPeriods', 'backupPeriodsNote', 'backupFormatNote']) {
+    assert.ok(hasText(text, key), key)
+  }
+  // The groupings and the periods are named, so the reader knows what the file
+  // covers before downloading it.
+  for (const key of ['billByWorkspace', 'billBySession', 'billByModel', 'billByVendor', 'rangeMonth', 'rangeYear', 'rangeWeek', 'rangeToday', 'rangeAll']) {
+    assert.ok(hasText(text, key), key)
+  }
 })
 
 test('a summarised session line names itself, says it is a summary, and the export is not shortened', () => {
@@ -2309,5 +2340,4 @@ test('a bill payload missing every optional field still renders', () => {
   const text = collectText(tree)
   assert.equal(cardsOf(tree).length, 4, 'the four sections are still offered')
   assert.ok(hasText(text, 'billByWorkspace'))
-  assert.ok(hasText(text, 'billExportHint'))
 })

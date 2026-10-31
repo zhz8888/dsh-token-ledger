@@ -17,7 +17,7 @@ retained and this fork's holder is added beside it; the original is kept as the
 | Document | What it holds |
 | --- | --- |
 | [How the numbers are counted](COUNTING.md) | The counting rules, how a fork is told from a resume, and what the audit's two kinds of difference mean. |
-| [The settings page](SETTINGS-PAGE.md) | The three views — Overview, Rates and Bill — in full, including where every price on them came from. |
+| [The settings page](SETTINGS-PAGE.md) | The four views — Overview, Rates, Bill and Backup — in full, including where every price on them came from. |
 | [Configuration](CONFIGURATION.md) | Every key the plugin reads, what each one changes, and where the history comes from. |
 | [Compatibility](COMPATIBILITY.md) | Which DSH it needs and why that range is load-bearing, the compatibility matrix, and what the plugin touches on your machine. |
 | [Development and releasing](DEVELOPMENT.md) | Working on the plugin, and publishing it. |

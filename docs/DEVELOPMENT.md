@@ -134,7 +134,7 @@ on the registry, and the GitHub release is only created when it does not already
 ## More documents
 
 - [How the numbers are counted](COUNTING.md) — the counting rules, forks versus resumes, and the audit
-- [The settings page](SETTINGS-PAGE.md) — the three views in full
+- [The settings page](SETTINGS-PAGE.md) — the four views in full
 - [Configuration](CONFIGURATION.md) — every key the plugin reads
 - [Compatibility](COMPATIBILITY.md) — which DSH it needs, and what it touches
 - [Development and releasing](DEVELOPMENT.md) — working on the plugin, and publishing it
