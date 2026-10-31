@@ -9,7 +9,7 @@
 
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -118,6 +118,14 @@ function makeRes() {
   res.end = (text) => {
     if (text !== undefined && text !== null) res.body += text
   }
+  // A real `ServerResponse` exposes these, and the dump route destroys a response
+  // whose stream failed: the stand-in records that so the test can see it.
+  res.destroyed = false
+  res.destroy = (error) => {
+    res.destroyed = true
+    if (error !== undefined) res.destroyError = error
+    res.emit('close')
+  }
   return res
 }
 
@@ -192,18 +200,29 @@ test('a non-loopback peer is refused', () => {
 })
 
 test('loopback addresses in every spelling are allowed', () => {
-  for (const address of ['127.0.0.1', '::1', '::ffff:127.0.0.1']) {
+  for (const address of ['127.0.0.1', '127.0.0.2', '127.0.0.10', '::1', '::ffff:127.0.0.1', '::ffff:127.9.9.9']) {
     assert.equal(isLoopbackAddress(address), true, address)
   }
   assert.equal(isLoopbackAddress(undefined), false)
   assert.equal(isLoopbackAddress(''), false)
   assert.equal(isLoopbackAddress('localhost'), false, 'a hostname is not an address')
+  assert.equal(isLoopbackAddress('::2'), false)
+  assert.equal(isLoopbackAddress('::ffff:192.168.1.20'), false, 'a mapped address is judged by the IPv4 it maps')
 })
 
 test('an inherited IP is not mistaken for loopback', () => {
   // 127.0.0.1.evil.example must not pass a naive prefix check.
   assert.equal(isLoopbackAddress('127.0.0.1.evil.example'), false)
-  assert.equal(isLoopbackAddress('127.0.0.10'), false)
+  assert.equal(isLoopbackAddress('128.0.0.1'), false)
+  assert.equal(isLoopbackAddress('127.0.0.256'), false)
+})
+
+test('a peer on another 127/8 address is still loopback', () => {
+  // The host may bind any address in 127/8, so a composition on 127.0.0.2 must
+  // reach the settings page like one on 127.0.0.1.
+  const route = createOverviewRoute({ ledger: fakeLedger(snapshot) })
+  assert.equal(call(route, makeReq({ address: '127.0.0.2' })).status, 200)
+  assert.equal(call(route, makeReq({ origin: 'http://127.0.0.2:43120' })).status, 200)
 })
 
 test('only local origins are accepted, and an absent origin is fine', () => {
@@ -212,6 +231,7 @@ test('only local origins are accepted, and an absent origin is fine', () => {
   assert.equal(isLocalOrigin('null'), true)
   assert.equal(isLocalOrigin('file://'), true)
   assert.equal(isLocalOrigin('http://127.0.0.1:43120'), true)
+  assert.equal(isLocalOrigin('http://127.0.0.2:43120'), true)
   assert.equal(isLocalOrigin('http://localhost:3000'), true)
   assert.equal(isLocalOrigin('http://[::1]:8080'), true)
   assert.equal(isLocalOrigin('https://evil.example'), false)
@@ -836,6 +856,15 @@ test('a bill HEAD request is served', () => {
   assert.equal(res.status, 200)
 })
 
+test('a CSV bill HEAD is answered from the metadata, without building the file', () => {
+  const res = call(billRoute(), makeBillReq({ method: 'HEAD', url: `${BILL_PATH}?by=session&range=month&format=csv` }))
+  assert.equal(res.status, 200)
+  assert.match(res.headers['content-type'], /text\/csv/)
+  assert.match(res.headers['content-disposition'], /attachment; filename="token-bill-session-month-2026-09-30\.csv"/)
+  assert.equal(res.body, '', 'no file is built for a HEAD')
+  assert.equal(res.headers['content-length'], undefined, 'the file is not built, so there is no length to state')
+})
+
 test('writing to the bill route is refused', () => {
   for (const method of ['POST', 'PUT', 'DELETE', 'PATCH']) {
     const res = call(billRoute(), makeBillReq({ method }))
@@ -964,6 +993,8 @@ test('the page asks to fold the session list, the export does not', () => {
   const csv = call(route, makeBillReq({ url: `${BILL_PATH}?by=session&range=month&format=csv` })).body
   assert.equal(csv.split('\r\n').filter((line) => line.startsWith('session,month,')).length, 4, 'three sessions and the total')
   assert.ok(!csv.includes('#small'))
+  const csvAskedToFold = call(route, makeBillReq({ url: `${BILL_PATH}?by=session&range=month&fold=small&format=csv` })).body
+  assert.equal(csvAskedToFold, csv, 'fold=small does not shorten a CSV export')
 
   // The config can turn it off, and then nothing folds however the page asks.
   const off = createBillRoute({
@@ -1046,6 +1077,15 @@ test('a read answers with the connections and the dumps', () => {
   assert.equal(body.backups.length, 1)
 })
 
+test('an unreadable connections file is an error, not an empty list', () => {
+  const route = createDatabasesRoute({
+    store: fakeDatabaseStore({ read: () => ({ connections: [], error: 'the connections file is not valid JSON' }) }),
+  })
+  const res = call(route, makeReq())
+  assert.equal(res.status, 503)
+  assert.match(JSON.parse(res.body).error, /not valid JSON/)
+})
+
 test('a dump is asked for by name and served as a file', async () => {
   const route = createDatabasesRoute({ store: fakeDatabaseStore() })
   const res = await callAsync(route, makeReq({ url: `${DATABASES_PATH}?file=gitea.sql` }))
@@ -1056,6 +1096,48 @@ test('a dump is asked for by name and served as a file', async () => {
   assert.equal(res.body, '-- dump\n')
   const missing = call(route, makeReq({ url: `${DATABASES_PATH}?file=nope.sql` }))
   assert.equal(missing.status, 404)
+})
+
+test('a HEAD for a dump is answered from the metadata without opening the file', async () => {
+  // The path is a directory, so a route that opened the dump would fail the same
+  // way a vanished file does: this pins that a HEAD never opens it at all.
+  const dir = mkdtempSync(join(tmpdir(), 'token-ledger-head-'))
+  mkdirSync(join(dir, 'unreadable.sql'))
+  const errors = []
+  const route = createDatabasesRoute({
+    store: {
+      ...fakeDatabaseStore(),
+      readBackup: (name) => ({ ok: true, name, path: join(dir, 'unreadable.sql'), size: 7 }),
+    },
+    options: { onError: (error) => errors.push(error) },
+  })
+  const res = await callAsync(route, makeReq({ method: 'HEAD', url: `${DATABASES_PATH}?file=unreadable.sql` }))
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  assert.equal(res.status, 200)
+  assert.match(res.headers['content-type'], /application\/sql/)
+  assert.equal(res.headers['content-length'], 7)
+  assert.equal(res.body, '')
+  assert.deepEqual(errors, [], 'a HEAD must not open the dump')
+  assert.equal(res.destroyed, false)
+})
+
+test('a dump whose read fails is reported and the response destroyed, not left hanging', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'token-ledger-gone-'))
+  const errors = []
+  const route = createDatabasesRoute({
+    store: {
+      ...fakeDatabaseStore(),
+      readBackup: (name) => ({ ok: true, name, path: join(dir, 'gone.sql'), size: 10 }),
+    },
+    options: { onError: (error) => errors.push(error) },
+  })
+  const res = await callAsync(route, makeReq({ url: `${DATABASES_PATH}?file=gone.sql` }))
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  assert.equal(res.status, 200)
+  assert.equal(res.headers['content-length'], 10)
+  assert.equal(errors.length, 1, 'the read failure is reported instead of thrown')
+  assert.equal(errors[0].code, 'ENOENT')
+  assert.equal(res.destroyed, true, 'the response is destroyed, so the client sees an incomplete transfer')
 })
 
 test('a connection is saved and one is removed', async () => {
