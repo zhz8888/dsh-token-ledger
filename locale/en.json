@@ -62,6 +62,7 @@
   "tabOverview": "Overview",
   "tabRates": "Rates",
   "tabBill": "Bill",
+  "tabsLabel": "Ledger views",
   "billTitle": "Bill",
   "billSubtitle": "Estimated from the current price list, not a provider invoice: discounts, credits and failed requests are not included",
   "billByVendor": "Vendor",

@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **The section's view switcher now looks like the plugin market's.** The three
+  buttons at the top of the settings section — Overview, Rates and Bill — were a
+  segmented strip of their own, drawn in colours the current host does not define,
+  so it read as a different application from the page around it. They now carry the
+  host's own plugin-market bar: a rounded track with the selected view's card on
+  it, and the card slides to the next view instead of the selection jumping to it.
+  The colours are the host's design tokens, so the bar follows the light and dark
+  themes on its own.
+
+  The switcher also behaves like the market's: the arrow keys walk it, `Home` and
+  `End` jump to its ends, only the selected view is a tab stop, and the view on
+  screen is the panel the selected tab names. The controls *inside* a view — the
+  range strip on the overview, the calendar's year/month/week switch, the five
+  periods of each bill grouping — keep the compact segmented look they had, because
+  they are switches within a card rather than the card's own navigation.
+
 ## [1.1.4] - 2026-10-30
 
 ### Added

@@ -62,6 +62,7 @@
   "tabOverview": "概览",
   "tabRates": "费率",
   "tabBill": "账单",
+  "tabsLabel": "账本视图",
   "billTitle": "费用账单",
   "billSubtitle": "按当前价目估算，不是厂商账单：折扣、赠送额度、失败请求都不计入",
   "billByVendor": "供应商",

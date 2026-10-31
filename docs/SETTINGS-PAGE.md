@@ -6,9 +6,14 @@ English | [中文](SETTINGS-PAGE.zh.md)
 
 ## Settings page
 
-The browser half adds a **Token ledger** section to the settings sidebar, with
-three tabs: **Overview**, **Rates** and **Bill**. Its own labels are registered with
-the host's locale service, so they follow the host's language.
+The browser half adds a **Token ledger** section to the settings sidebar. At the
+top it carries a view switcher in the host's own plugin-market shape — a rounded
+track with the selected view's card on it, the card sliding to the next view —
+and three views: **Overview**, **Rates** and **Bill**. The switcher takes the
+arrow keys as well as the pointer, and only the selected view is a tab stop.
+
+Its own labels are registered with the host's locale service, so they follow the
+host's language.
 
 ### Overview
 

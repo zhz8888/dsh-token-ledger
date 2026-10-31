@@ -839,6 +839,77 @@ test('the section offers a tab per view and shows the overview first', () => {
   assert.ok(!hasText(text, 'ratesTitle'), 'the rates view is not rendered until it is chosen')
 })
 
+test('the view switcher is the market\'s bar: a track, a card on it, and the tabs', () => {
+  const { module } = loadWithSection()
+  const priming = module.priming
+  priming.length = 0
+  priming.push(DEFAULT, DEFAULT, { status: 'ready', data: payload(), error: null })
+  const tree = expand(module.__section({ t: fakeT() }))
+  priming.length = 0
+
+  const tablist = findByClass(tree, 'tl-view-tabs')
+  assert.ok(tablist, 'the switcher is the plugin market\'s shape')
+  assert.equal(tablist.props.role, 'tablist')
+  assert.equal(tablist.props['aria-label'], 'tabsLabel', 'the list says what it is')
+
+  const tabs = findAllByClass(tree, 'tl-view-tab').filter((tab) => tab.type === 'button')
+  assert.equal(tabs.length, 3, 'one tab per view')
+  assert.deepEqual(tabs.map((tab) => collectText(tab)[0]), ['tabOverview', 'tabRates', 'tabBill'])
+  // Only the selected view is a tab stop, so the reader walks the bar with the
+  // arrow keys rather than tabbing through it.
+  assert.deepEqual(tabs.map((tab) => tab.props['aria-selected']), [true, false, false])
+  assert.deepEqual(tabs.map((tab) => tab.props.tabIndex), [0, -1, -1])
+  assert.deepEqual(tabs.map((tab) => tab.props['aria-controls']), ['tl-view-panel-overview', 'tl-view-panel-rates', 'tl-view-panel-bill'])
+
+  // The card that marks the selected view sits behind the tabs and slides to
+  // the next column; the overview is the one on screen, so it starts at the
+  // first column.
+  const indicator = findByClass(tree, 'tl-view-tab-indicator')
+  assert.ok(indicator, 'the card is there')
+  assert.equal(indicator.props['aria-hidden'], 'true', 'and it is only a picture')
+  assert.equal(indicator.props.style.transform, 'translateX(0%)')
+  assert.equal(indicator.props.style.width, 'calc((100% - 8px) / 3)', 'one column wide')
+
+  // The view the switcher shows is the panel the selected tab names.
+  const panel = findByClass(tree, 'tl-panel')
+  assert.equal(panel.props.role, 'tabpanel')
+  assert.equal(panel.props.id, 'tl-view-panel-overview')
+  assert.equal(panel.props['aria-labelledby'], 'tl-view-tab-overview')
+})
+
+test('the arrow keys walk the view switcher', () => {
+  const { module } = loadWithSection()
+  const priming = module.priming
+  priming.length = 0
+  priming.push(DEFAULT, DEFAULT, { status: 'ready', data: payload(), error: null })
+  const tree = expand(module.__section({ t: fakeT() }))
+  priming.length = 0
+
+  const tabs = findAllByClass(tree, 'tl-view-tab').filter((tab) => tab.type === 'button')
+  const press = (tab, key) => {
+    module.recorder.setState = null
+    let prevented = false
+    tab.props.onKeyDown({
+      key,
+      preventDefault: () => {
+        prevented = true
+      },
+      currentTarget: { parentElement: { querySelectorAll: () => tabs } },
+    })
+    return { asked: module.recorder.setState, prevented }
+  }
+
+  assert.equal(press(tabs[0], 'ArrowRight').asked, 'rates', 'the right arrow takes the next view')
+  assert.equal(press(tabs[0], 'ArrowLeft').asked, 'bill', 'and the left one the last, because the bar wraps')
+  assert.equal(press(tabs[0], 'End').asked, 'bill', 'End is the last view')
+  assert.equal(press(tabs[0], 'Home').asked, 'overview', 'and Home the first')
+  assert.equal(press(tabs[2], 'ArrowRight').asked, 'overview', 'the bar wraps at its end too')
+  const other = press(tabs[0], 'a')
+  assert.equal(other.asked, null, 'a key that is not a navigation key asks for nothing')
+  assert.equal(other.prevented, false, 'and the browser is left to do whatever it does with it')
+  assert.equal(press(tabs[0], 'ArrowRight').prevented, true, 'a navigation key is handled here')
+})
+
 test('the rates view shows the live rate, its source and the per-million unit', () => {
   const { module } = loadWithSection()
   const { text } = renderRates(module, { status: 'ready', data: ratesPayload(), error: null })

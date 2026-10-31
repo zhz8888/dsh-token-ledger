@@ -170,6 +170,31 @@ test('the overview renders under real React without the library objecting', { sk
   assert.ok(html.startsWith('<div class="tl-root"'), html.slice(0, 80))
 })
 
+test('the view switcher renders under real React without the library objecting', { skip }, () => {
+  const exports = loadClient()
+  assert.equal(typeof exports.ViewTabs, 'function', 'the switcher must be exported for this test')
+
+  const { html, complaints } = renderComponent(exports.ViewTabs, {
+    value: 'rates',
+    label: '账本视图',
+    onChange: () => {},
+    options: [
+      { value: 'overview', label: '概览' },
+      { value: 'rates', label: '费率' },
+      { value: 'bill', label: '账单' },
+    ],
+  })
+  assert.deepEqual(complaints, [], 'React reported a problem with the rendered tree')
+  assert.ok(html.includes('role="tablist"'), html.slice(0, 160))
+  // The card that marks the selected view sits behind the tabs, under the
+  // column the selected view owns.
+  assert.ok(html.includes('class="tl-view-tab-indicator"'), 'the card is there')
+  assert.ok(html.includes('aria-hidden="true"'), 'and it is only a picture')
+  assert.ok(html.includes('translateX(100%)'), 'under the second view, the one that is selected')
+  assert.ok(html.includes('aria-selected="true"'), 'the selected view is marked')
+  assert.ok(html.includes('tabindex="0"'), 'and only it is a tab stop')
+})
+
 test('the range metrics render with the selected range applied', { skip }, () => {
   const exports = loadClient()
 
