@@ -877,6 +877,31 @@ test('the view switcher is the market\'s bar: a track, a card on it, and the tab
   assert.equal(panel.props['aria-labelledby'], 'tl-view-tab-overview')
 })
 
+test('the view switcher is pinned to the top of the section', () => {
+  const { module } = loadWithSection()
+  const priming = module.priming
+  priming.length = 0
+  priming.push(DEFAULT, DEFAULT, { status: 'ready', data: payload(), error: null })
+  const tree = expand(module.__section({ t: fakeT() }))
+  priming.length = 0
+
+  // The switcher sits on a bar of its own, and it is the only one: every other
+  // row on the page is a row of content, not the section's navigation.
+  const bars = findAllByClass(tree, 'tl-view-bar')
+  assert.equal(bars.length, 1, 'one bar')
+  assert.equal(String(bars[0].props.className), 'tl-row tl-view-bar')
+
+  // It is pinned by the stylesheet, not by a script: the stylesheet is the
+  // only thing that can hold it to the top of the scrolling panel.
+  const source = readFileSync(fileURLToPath(new URL('../lib/client.js', import.meta.url)), 'utf8')
+  assert.match(source, /\.tl-view-bar \{ position: sticky; top: 0; z-index: 2;/, 'the bar stays where the reader can reach it')
+  assert.match(source, /\.tl-view-bar \{[^}]*background: var\(--dsw-alias-bg-layer-2/, 'and the content scrolls under it, not through it')
+  // The padding and the margin are a pair: the padding reaches over the gap
+  // below the bar so that nothing peeks through it, and the margin gives that
+  // space back, so pinning the bar does not move the page.
+  assert.match(source, /\.tl-view-bar \{[^}]*padding-bottom: 18px; margin-bottom: -18px;/, 'pinning the bar does not move the page')
+})
+
 test('the arrow keys walk the view switcher', () => {
   const { module } = loadWithSection()
   const priming = module.priming

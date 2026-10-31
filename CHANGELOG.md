@@ -24,6 +24,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   periods of each bill grouping — keep the compact segmented look they had, because
   they are switches within a card rather than the card's own navigation.
 
+- **The view switcher stays put while the page scrolls.** A bill with four
+  groupings and five periods each is a long page, and the way back to the
+  overview scrolled off the top with it. The bar the switcher sits on is now
+  pinned to the top of the section, so the three views are always one click
+  away no matter how far down the reader is.
+
+  The bar is opaque and reaches over the gap below it, so the content slides
+  under it rather than through it, and it is drawn in the same surface colour
+  the section itself is drawn on — it reads as part of the page, not as a
+  panel floating over it. Pinning it costs no space: the page looks exactly as
+  it did before the reader scrolled.
+
 ## [1.1.4] - 2026-10-30
 
 ### Added

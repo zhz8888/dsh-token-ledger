@@ -12,6 +12,12 @@ track with the selected view's card on it, the card sliding to the next view —
 and three views: **Overview**, **Rates** and **Bill**. The switcher takes the
 arrow keys as well as the pointer, and only the selected view is a tab stop.
 
+The switcher is **pinned to the top of the section**: a bill with four groupings
+and five periods each is a long page, and the way back to the other views stays
+within reach however far down the reader is. The content scrolls under the bar
+rather than through it, and pinning it costs no space — the page looks the same
+as it did before the reader scrolled.
+
 Its own labels are registered with the host's locale service, so they follow the
 host's language.
 
