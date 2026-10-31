@@ -70,6 +70,20 @@ const backupMarkup = (locale) =>
     react.createElement(client.BackupView, {
       t: (key) => dictionaries[locale][key] ?? key,
       state: { status: 'ready', data: { ledgerUpdatedAt: new Date(2026, 9, 31, 12, 0, 0).getTime() }, error: null },
+      databases: {
+        status: 'ready',
+        connections: [
+          { id: 'gitea', name: 'Gitea', type: 'mariadb', host: '127.0.0.1', port: 3306, database: 'gitea', user: 'gitea', hasPassword: true },
+          { id: 'telegram-files', name: 'Telegram Files', type: 'postgres', host: '192.168.78.10', port: 5432, database: 'telegram-files', user: 'telegram-files', hasPassword: true },
+        ],
+        backups: [
+          { name: 'gitea-2026-10-31T12-00-00-000Z.sql', bytes: 6_082_944, at: 1 },
+          { name: 'telegram-files-2026-10-30T03-12-00-000Z.sql', bytes: 1_073_741_824, at: 2 },
+        ],
+        busy: null,
+        notice: null,
+      },
+      onDatabase: () => {},
     }),
   )
 
