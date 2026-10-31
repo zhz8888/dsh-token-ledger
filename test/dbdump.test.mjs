@@ -10,9 +10,9 @@
 
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
-import { mkdtempSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { test } from 'node:test'
 
@@ -24,6 +24,7 @@ import {
   findExecutable,
   listBackups,
   redact,
+  runCommand,
   runDump,
   runTest,
   testCommand,
@@ -58,11 +59,13 @@ function connection(overrides = {}) {
  * @param {string} [input.stdout] - what it writes to the standard output.
  * @param {string} [input.stderr] - what it writes to the standard error.
  * @param {object[]} [input.seen] - where the call is recorded.
+ * @param {Function} [input.onSpawn] - called with the call, before the child is returned.
  * @returns {Function} the spawn function.
  */
-function fakeSpawn({ code = 0, stdout = '', stderr = '', seen = [] } = {}) {
+function fakeSpawn({ code = 0, stdout = '', stderr = '', seen = [], onSpawn = () => {} } = {}) {
   return (command, args, options) => {
     seen.push({ command, args, env: options?.env })
+    onSpawn({ command, args, env: options?.env })
     const child = new EventEmitter()
     // The standard streams are real streams: the dump is piped into a file, and
     // a stand-in that cannot be piped to would not exercise that.
@@ -92,6 +95,49 @@ function pathWith(name) {
   return { PATH: join(tmpdir(), 'token-ledger-tools') }
 }
 
+/**
+ * The option file a MySQL or MariaDB command was given.
+ *
+ * @param {string[]} args - the command's arguments.
+ * @returns {string|null} the path, when there is one.
+ */
+function optionFileOf(args) {
+  const arg = args.find((value) => value.startsWith('--defaults-extra-file='))
+  return arg === undefined ? null : arg.slice('--defaults-extra-file='.length)
+}
+
+/**
+ * Split a PostgreSQL password file line the way libpq reads one.
+ *
+ * The five fields are separated by colons, a colon or a backslash inside a
+ * field is escaped with a backslash, and an escaped character stands for
+ * itself.
+ *
+ * @param {string} text - the file's contents.
+ * @returns {string[]} the fields of the first line.
+ */
+function passFileFields(text) {
+  const fields = []
+  let field = ''
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index]
+    if (character === '\n') break
+    if (character === '\\') {
+      field += text[index + 1] ?? ''
+      index += 1
+      continue
+    }
+    if (character === ':') {
+      fields.push(field)
+      field = ''
+      continue
+    }
+    field += character
+  }
+  fields.push(field)
+  return fields
+}
+
 test('each engine has the tool that dumps it', () => {
   assert.deepEqual(dumpToolsFor('mysql'), ['mysqldump', 'mariadb-dump'])
   assert.deepEqual(dumpToolsFor('mariadb'), ['mariadb-dump', 'mysqldump'])
@@ -110,6 +156,25 @@ test('a tool is found the way a shell finds one', () => {
   assert.equal(findExecutable('nothing', { env, access }), null)
   // A path is used as it is: it was written by whoever set it.
   assert.equal(findExecutable('/opt/tools/mysqldump', { env, access }), null)
+})
+
+test('a tool is found by the extension Windows knows it by', () => {
+  const env = {
+    PATH: ['/usr/local/bin', '/tools'].join(process.platform === 'win32' ? ';' : ':'),
+    PATHEXT: '.COM;.EXE;.BAT;.CMD',
+  }
+  // The file on the disk is `mysqldump.exe`; the name the caller has is `mysqldump`.
+  const exeOnly = (path) => {
+    if (path === join('/tools', 'mysqldump.EXE')) return
+    throw new Error('not executable')
+  }
+  assert.equal(findExecutable('mysqldump', { env, access: exeOnly }), join('/tools', 'mysqldump.EXE'))
+  // The bare name is still tried first, so a file that is called exactly that wins.
+  const bare = (path) => {
+    if (path === join('/tools', 'mysqldump')) return
+    throw new Error('not executable')
+  }
+  assert.equal(findExecutable('mysqldump', { env, access: bare }), join('/tools', 'mysqldump'))
 })
 
 test('the password never reaches the command line', () => {
@@ -133,6 +198,54 @@ test('the connection is asked without a password', () => {
   assert.ok(postgres.args.includes('--command=SELECT 1'))
   // A client that asks for a password on the terminal would hang the route.
   assert.ok(postgres.args.includes('--no-password'))
+})
+
+test('the PostgreSQL password file escapes the fields that mean something', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'token-ledger-dump-'))
+  let written = null
+  const outcome = await runDump(connection({ type: 'postgres', host: '::1', port: 5432, password: 'p:a\\ss' }), {
+    dir,
+    now: () => Date.UTC(2026, 9, 31, 12, 0, 0),
+    spawn: fakeSpawn({
+      stdout: '-- dump\n',
+      onSpawn: ({ env }) => {
+        written = readFileSync(env.PGPASSFILE, 'utf8')
+      },
+    }),
+    access: (path) => {
+      if (path.endsWith('pg_dump')) return
+      throw new Error('not executable')
+    },
+    env: pathWith('pg_dump'),
+  })
+  assert.equal(outcome.ok, true)
+  // An IPv6 host is `::1` and the password holds a colon and a backslash: the
+  // line still says five fields, and they are the five that went in.
+  assert.deepEqual(passFileFields(written), ['::1', '5432', 'gitea', 'gitea', 'p:a\\ss'])
+})
+
+test('a line break in a MySQL password stays one value in the option file', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'token-ledger-dump-'))
+  let body = null
+  const outcome = await runDump(connection({ password: 'a\nb' }), {
+    dir,
+    now: () => Date.UTC(2026, 9, 31, 12, 0, 0),
+    spawn: fakeSpawn({
+      stdout: '-- dump\n',
+      onSpawn: ({ args }) => {
+        body = readFileSync(optionFileOf(args), 'utf8')
+      },
+    }),
+    access: (path) => {
+      if (path.endsWith('mysqldump')) return
+      throw new Error('not executable')
+    },
+    env: pathWith('mysqldump'),
+  })
+  assert.equal(outcome.ok, true)
+  // The break is the escape the client understands, so the password stays the
+  // value of one option and the file gains no option of its own.
+  assert.equal(body, '[client]\nuser="gitea"\npassword="a\\nb"\nhost="127.0.0.1"\nport=3306\n')
 })
 
 test('a password a tool printed is taken out of what the reader is told', () => {
@@ -224,6 +337,94 @@ test('a connection that works says so', async () => {
     env: pathWith('mysql'),
   })
   assert.equal(outcome.ok, true)
+})
+
+test('a tool that will not stop is killed outright, and its exit is waited for', async () => {
+  const signals = []
+  const spawn = () => {
+    const child = new EventEmitter()
+    child.stderr = new PassThrough()
+    child.stdout = new PassThrough()
+    child.exitCode = null
+    child.kill = (signal) => signals.push(signal ?? 'SIGTERM')
+    return child
+  }
+  const outcome = await runCommand({
+    command: '/usr/bin/mysqldump',
+    args: [],
+    env: {},
+    spawn,
+    timeoutMs: 20,
+    killGraceMs: 20,
+    closeGraceMs: 20,
+  })
+  // The polite signal first, the kill when it is ignored, and no answer until
+  // the tool is gone.
+  assert.deepEqual(signals, ['SIGTERM', 'SIGKILL'])
+  assert.equal(outcome.timedOut, true)
+  assert.equal(outcome.code, -1)
+  assert.ok(outcome.stderr.includes('took too long'))
+})
+
+test('a tool that stops when it is asked is not killed', async () => {
+  const signals = []
+  const spawn = () => {
+    const child = new EventEmitter()
+    child.stderr = new PassThrough()
+    child.stdout = new PassThrough()
+    child.exitCode = null
+    child.kill = (signal) => {
+      signals.push(signal ?? 'SIGTERM')
+      setImmediate(() => {
+        child.exitCode = 0
+        child.emit('close', 0)
+      })
+    }
+    return child
+  }
+  const outcome = await runCommand({
+    command: '/usr/bin/mysqldump',
+    args: [],
+    env: {},
+    spawn,
+    timeoutMs: 20,
+    killGraceMs: 100,
+    closeGraceMs: 100,
+  })
+  assert.deepEqual(signals, ['SIGTERM'])
+  assert.equal(outcome.timedOut, true)
+  // A dump that was cut short is not a dump that worked, even when the tool
+  // leaves with a success code of its own.
+  assert.equal(outcome.code, -1)
+})
+
+test('the test command keeps its password in a directory of its own', async () => {
+  let seen = null
+  const outcome = await runTest(connection(), {
+    spawn: fakeSpawn({
+      stdout: '1\n',
+      onSpawn: ({ args }) => {
+        const file = optionFileOf(args)
+        const dir = dirname(file)
+        seen = { body: readFileSync(file, 'utf8'), dir, dirMode: statSync(dir).mode & 0o777 }
+      },
+    }),
+    access: (path) => {
+      if (path.endsWith('mysql')) return
+      throw new Error('not executable')
+    },
+    env: pathWith('mysql'),
+  })
+  assert.equal(outcome.ok, true)
+  assert.ok(seen.body.includes('password="secret"'))
+  // A fresh owner-only directory under the temporary directory, not a name in
+  // the temporary directory itself: a name there is one someone else can take.
+  assert.ok(basename(seen.dir).startsWith('token-ledger-'))
+  assert.equal(resolve(dirname(seen.dir)), resolve(tmpdir()))
+  if (process.platform !== 'win32') {
+    assert.equal(seen.dirMode & 0o077, 0, 'no one but the owner may read it')
+  }
+  assert.ok(!existsSync(seen.dir), 'the directory goes away with the run')
 })
 
 test('the dumps on disk are listed newest first', () => {

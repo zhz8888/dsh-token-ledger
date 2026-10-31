@@ -9,7 +9,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -76,6 +76,11 @@ test('a connection is checked as a whole, not in parts', () => {
   assert.equal(validateConnection(connection({ host: 'a\nb' })).ok, false)
   assert.equal(validateConnection(connection({ database: 'a\nb' })).ok, false)
   assert.equal(validateConnection(connection({ user: 'a\nb' })).ok, false)
+  // A password with one would end the value in the file it is written into, and
+  // whatever followed would be read as another line of the client's options.
+  assert.equal(validateConnection(connection({ password: 'a\nb' })).ok, false)
+  assert.equal(validateConnection(connection({ password: 'a\rb' })).ok, false)
+  assert.equal(validateConnection(connection({ password: 'a\0b' })).ok, false)
 })
 
 test('the port defaults to the one the engine listens on', () => {
@@ -131,7 +136,7 @@ test(
   },
 )
 
-test('a file of connections that cannot be read is empty rather than an error', () => {
+test('a file of connections that cannot be read yields no connections', () => {
   const dir = scratch()
   assert.deepEqual(readConnections(join(dir, 'missing.json')), [])
   const broken = join(dir, 'broken.json')
@@ -140,6 +145,34 @@ test('a file of connections that cannot be read is empty rather than an error', 
   const shapeless = join(dir, 'shapeless.json')
   writeFileSync(shapeless, '{"connections": "not a list"}')
   assert.deepEqual(readConnections(shapeless), [])
+})
+
+test('a connections file that cannot be read is never written over', () => {
+  const dir = scratch()
+  const path = join(dir, 'databases.json')
+  const broken = '{"connections": [{"id": "gitea", "password": "secret"}'
+  writeFileSync(path, broken)
+  const store = createDatabaseStore({ path, dir: join(dir, 'backups') })
+
+  // The page is told the list is empty, and why it is empty.
+  const state = store.read()
+  assert.deepEqual(state.connections, [])
+  assert.equal(state.error, 'the connections file is not valid JSON')
+
+  // Nothing is written over a file that could not be read, and no dump is run
+  // for a connection that cannot be named.
+  assert.equal(store.save(connection()).ok, false)
+  assert.equal(store.remove('gitea').ok, false)
+  assert.equal(store.secret('gitea'), undefined)
+  assert.equal(readFileSync(path, 'utf8'), broken, 'the file is untouched')
+
+  // A file that is valid JSON but not a list of connections is the same kind of
+  // thing: writing over it would discard whatever it does hold.
+  const shapeless = '{"connections": "not a list"}'
+  writeFileSync(path, shapeless)
+  assert.equal(store.save(connection()).ok, false)
+  assert.equal(store.read().error, 'the connections file does not hold connections')
+  assert.equal(readFileSync(path, 'utf8'), shapeless)
 })
 
 test('the store keeps the password out of what it hands back', () => {
@@ -186,6 +219,19 @@ test('a dump is served by name, and only a name this page wrote', () => {
   assert.equal(store.readBackup('anything.sql').ok, false)
   assert.equal(store.readBackup('/etc/passwd').ok, false)
   assert.equal(store.readBackup('gitea-2026.sql').ok, false, 'the file is not there')
+})
+
+test('a directory called like a dump is not a dump', () => {
+  const dir = scratch()
+  const store = createDatabaseStore({ path: join(dir, 'databases.json'), dir })
+  mkdirSync(join(dir, 'looks-like.sql'))
+  // A name is not a dump: the route would hand this path to a stream and ask it
+  // to read a directory.
+  assert.equal(store.readBackup('looks-like.sql').ok, false, 'a directory is not served')
+  writeFileSync(join(dir, 'real.sql'), 'a dump')
+  const found = store.readBackup('real.sql')
+  assert.equal(found.ok, true)
+  assert.equal(found.size, 6)
 })
 
 test('the store lives beside the ledger', () => {
