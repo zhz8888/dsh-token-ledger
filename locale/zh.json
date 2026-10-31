@@ -130,6 +130,8 @@
   "dbDumpPath": "导出工具路径",
   "dbDumpPathHint": "留空则用 PATH 上的同名工具（mysqldump / mariadb-dump / pg_dump）。连接与密码保存在 DSH 主目录的 token-ledger/databases.json，只有当前用户可读。",
   "dbEmpty": "还没有数据库连接",
+  "dbUnavailable": "无法读取数据库连接",
+  "dbUnavailableReason": "设置面板读不到 /api/token-ledger/databases。通常是因为当前 profile 没有挂载 web 服务器，或插件刚更新但宿主进程还没重启（这个接口要重启后才会注册）。",
   "dbFiles": "备份文件",
   "dbSaved": "连接已保存",
   "dbRemoved": "连接已删除",

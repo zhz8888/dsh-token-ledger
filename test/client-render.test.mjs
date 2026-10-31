@@ -797,9 +797,24 @@ test('a failed connection read says so instead of claiming there is nothing', { 
   })
   assert.deepEqual(complaints, [], 'React reported a problem with the rendered tree')
   assert.ok(html.includes('class="tl-error"'), 'the failure uses the danger style')
-  assert.ok(html.includes('unavailable'), 'the card says the read is unavailable')
+  assert.ok(html.includes('dbUnavailable'), 'the card says the connections could not be read')
   assert.ok(html.includes('HTTP 500'), 'and carries the host’s own words')
   assert.equal(html.includes('dbEmpty'), false, 'a refused read is not a claim that there is nothing')
+  assert.equal(html.includes('dbUnavailableReason'), false, 'a server error does not blame a missing restart')
+})
+
+test('a connections route that is not registered points at the restart', { skip }, () => {
+  const exports = loadClient()
+  const { html, complaints } = renderComponent(exports.BackupView, {
+    state: { status: 'ready', data: { ledgerUpdatedAt: new Date(2026, 2, 31, 12, 0, 0).getTime() }, error: null },
+    databases: { status: 'error', error: 'HTTP 404', connections: [], backups: [], busy: null, notice: null },
+    onDatabase: () => {},
+  })
+  assert.deepEqual(complaints, [], 'React reported a problem with the rendered tree')
+  assert.ok(html.includes('dbUnavailable'), 'the card says the connections could not be read')
+  assert.ok(html.includes('HTTP 404'), 'and carries the status it got')
+  assert.ok(html.includes('dbUnavailableReason'), 'and explains that the host process needs a restart')
+  assert.equal(html.includes('dbEmpty'), false, 'a missing route is not a claim that there is nothing')
 })
 
 test('the bill shows both halves of the input, the money and what went unpriced', { skip }, () => {

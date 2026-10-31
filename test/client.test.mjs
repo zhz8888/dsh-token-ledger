@@ -2273,9 +2273,16 @@ test('a failed connection read is shown as a failure, not as "no connections"', 
   assert.equal(hasText(loading, 'dbEmpty'), false, 'and does not claim the list is empty')
 
   const failed = collectText(renderBackupWithDatabases(module, { status: 'error', error: 'HTTP 500', connections: [], backups: [], busy: null, notice: null }).tree)
-  assert.ok(hasText(failed, 'unavailable'), 'the card says the read is unavailable')
+  assert.ok(hasText(failed, 'dbUnavailable'), 'the card says the connections could not be read')
   assert.ok(hasText(failed, 'HTTP 500'), 'and carries the host’s own words')
   assert.equal(hasText(failed, 'dbEmpty'), false, 'a refused read is not a claim that there is nothing')
+  assert.equal(hasText(failed, 'dbUnavailableReason'), false, 'a server error does not blame a missing restart')
+
+  // A 404 is the route not being registered at all: the host process that serves
+  // the page predates the feature, so the card says what to do about it.
+  const missing = collectText(renderBackupWithDatabases(module, { status: 'error', error: 'HTTP 404', connections: [], backups: [], busy: null, notice: null }).tree)
+  assert.ok(hasText(missing, 'dbUnavailable'), 'the card says the connections could not be read')
+  assert.ok(hasText(missing, 'dbUnavailableReason'), 'and explains that the host process needs a restart')
 
   const empty = collectText(renderBackupWithDatabases(module, { status: 'ready', connections: [], backups: [], busy: null, notice: null }).tree)
   assert.ok(hasText(empty, 'dbEmpty'), 'only a read that worked may say there is none')

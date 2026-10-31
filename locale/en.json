@@ -130,6 +130,8 @@
   "dbDumpPath": "Dump tool",
   "dbDumpPathHint": "Leave it empty to use the tool on the PATH (mysqldump / mariadb-dump / pg_dump). The connections and their passwords live in token-ledger/databases.json in the DSH home, readable by you alone.",
   "dbEmpty": "No database connections yet",
+  "dbUnavailable": "Database connections unavailable",
+  "dbUnavailableReason": "The settings panel could not read /api/token-ledger/databases. The active profile usually has no web server mounted, or the plugin was updated without restarting the host process (the route is registered only after a restart).",
   "dbFiles": "Dumps",
   "dbSaved": "The connection is saved",
   "dbRemoved": "The connection is removed",
