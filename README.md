@@ -37,11 +37,12 @@ scanned 139 session log(s), 344203 events, 29 forked session(s), 0 unreadable
 If you only want a pretty chart, there are a dozen plugins for that. This one is
 for when you need to *defend* the number.
 
-The settings page has three tabs — **Overview** (the ledger, with what each period
+The settings page has four tabs — **Overview** (the ledger, with what each period
 cost), **Rates** (a price list for each vendor's models — the newest few by default,
-all of them on request — with the live USD/CNY rate) and **Bill** (the same usage
-turned into money — four groupings stacked over five periods each, exportable as CSV
-or JSON in one file) — and a CLI that works with no host running at all.
+all of them on request — with the live USD/CNY rate), **Bill** (the same usage
+turned into money — four groupings stacked over five periods each) and **Backup**
+(the ledger as a CSV or JSON file, and a MySQL, MariaDB or PostgreSQL database
+dumped to a .sql file) — and a CLI that works with no host running at all.
 
 ## Contents
 
@@ -194,7 +195,7 @@ Exit codes: `0` success or audit match, `1` audit found a real difference,
 ## The settings page
 
 The browser half adds a **Token ledger** section to the settings sidebar, with
-three tabs. Its own labels are registered with the host's locale service, so they
+four tabs. Its own labels are registered with the host's locale service, so they
 follow the host's language.
 
 - **Overview** — the month's totals, today live, a usage calendar, and a per-model
@@ -203,7 +204,10 @@ follow the host's language.
   expandable to its full model list, every price editable by hand for the times the
   network is not there.
 - **Bill** — the same usage as money: workspace, session, model and vendor
-  stacked, each with its own period, one CSV or JSON export for all of it.
+  stacked, each with its own period.
+- **Backup** — the ledger as a CSV or JSON file, and database backups: give it a
+  MySQL, MariaDB or PostgreSQL connection and it dumps that database to a .sql
+  file. The dump is made by the database's own tool, so the machine has to have it.
 
 [The settings page in full](docs/SETTINGS-PAGE.md) — what each view shows, and
 where every price on it came from.
@@ -263,10 +267,10 @@ than inferred:
 
 | Capability | What it actually does |
 | --- | --- |
-| **Files** | Reads the session logs under `<DSH_HOME>/sessions/`, read-only, and reads `<DSH_HOME>/settings.yaml` for the provider display names a bill shows. Writes two files in its own directory — `<DSH_HOME>/token-ledger/ledger.json` and `rates.json` — plus exports where you ask for them. Nothing outside that directory is written or removed. |
-| **Network** | Plain HTTPS `GET`s, and only while the rates feature is on: the price catalogue, the USD/CNY rate, and at most three vendor pricing pages. `rates: false` removes every one of them. The browser half makes no external request at all. |
-| **Commands** | No shell, no child process, no spawn — neither at install time nor at run time. What it exposes is the `/tokens` slash command and the `dsh-token-ledger` binary you run yourself. |
-| **Credentials** | None are read. `process.env` is consulted only to resolve `DSH_HOME`; no provider API key, no keychain, no OAuth. |
+| **Files** | Reads the session logs under `<DSH_HOME>/sessions/`, read-only, and reads `<DSH_HOME>/settings.yaml` for the provider display names a bill shows. Writes four things in its own directory — `<DSH_HOME>/token-ledger/ledger.json`, `rates.json`, `databases.json` and the `backups/` folder — plus exports where you ask for them. Nothing outside that directory is written or removed. |
+| **Network** | Plain HTTPS `GET`s, and only while the rates feature is on: the price catalogue, the USD/CNY rate, and at most three vendor pricing pages. `rates: false` removes every one of them. The browser half makes no external request at all. **The backup page opens a connection to the database servers you configure**, over their own protocol (3306 or 5432), and only when you press **Test** or **Dump**. |
+| **Commands** | No shell — nothing is ever handed to `sh -c`. **The backup page starts the database's own dump tool** (`mysqldump`, `mariadb-dump` or `pg_dump`) as a child process when you press **Dump**, with its arguments as an array rather than a command line. Apart from that there is no child process, at install time or at run time. What it exposes is the `/tokens` slash command and the `dsh-token-ledger` binary you run yourself. |
+| **Credentials** | No provider credential is read: `process.env` is consulted only to resolve `DSH_HOME`; no provider API key, no keychain, no OAuth. **The backup page keeps the database passwords you type**, in `<DSH_HOME>/token-ledger/databases.json`, readable by your account only. They are handed to the database's own client tool through a file that is deleted as soon as the dump is over, and they never appear on a command line. |
 
 Every claim above can be checked against the source — the imports, the URLs and the
 state directory are all in `lib/`, and `pnpm run verify` asserts the packaging
@@ -368,9 +372,10 @@ evidence or it does not go in. The rest —
 
 This plugin reads the session logs, reads `settings.yaml` for the provider display
 names a bill shows, and writes only inside `<DSH_HOME>/token-ledger/`. It reads no
-credentials of any kind. The full list of what it touches is in
-[Permissions](#permissions), item by item, so it can be checked against the source
-rather than taken on trust.
+provider credentials; the backup page keeps the **database passwords you type
+yourself**, in that same directory, readable by your account only. The full list of
+what it touches is in [Permissions](#permissions), item by item, so it can be
+checked against the source rather than taken on trust.
 
 **To report a vulnerability, please do not open a public issue.** Use GitHub's
 private reporting on this repository's **Security** tab (*Report a vulnerability*),

@@ -743,6 +743,28 @@ test('the export links carry every grouping over every period', { skip }, () => 
   assert.equal(bill.html.includes('token-bill-all-'), false, 'the bill page offers no file')
 })
 
+test('the database card renders its connections under the real React', { skip }, () => {
+  const exports = loadClient()
+  const { html, complaints } = renderComponent(exports.BackupView, {
+    state: { status: 'ready', data: { ledgerUpdatedAt: new Date(2026, 2, 31, 12, 0, 0).getTime() }, error: null },
+    databases: {
+      status: 'ready',
+      connections: [{ id: 'gitea', name: 'Gitea', type: 'mariadb', host: '127.0.0.1', port: 3306, database: 'gitea', user: 'gitea', hasPassword: true }],
+      backups: [{ name: 'gitea-2026-10-31T12-00-00-000Z.sql', bytes: 1024, at: 1 }],
+      busy: null,
+      notice: null,
+    },
+    onDatabase: () => {},
+  })
+  assert.deepEqual(complaints, [], 'React reported a problem with the rendered tree')
+  assert.ok(html.includes('Gitea'))
+  assert.ok(html.includes('127.0.0.1:3306 / gitea'))
+  assert.ok(html.includes('dbTypeMariadb'))
+  // The password is not on the page, and the dump is linked rather than shown.
+  assert.ok(html.includes('/api/token-ledger/databases?file=gitea-2026-10-31T12-00-00-000Z.sql'))
+  assert.equal(html.includes('password="'), false, 'no password field carries a value')
+})
+
 test('the bill shows both halves of the input, the money and what went unpriced', { skip }, () => {
   const exports = loadClient()
   const withUnpriced = billPayload({

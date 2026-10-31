@@ -45,6 +45,45 @@ Override the composition entry by its `id`:
 hand-entered values as the only source. That is the setting a strictly offline host
 wants; the rates page still works.
 
+### The database connections
+
+The database backups are **not** a configuration key. A connection carries a
+password, and a setting is persisted, rewritten on every debounce and readable
+in `settings.yaml` — a password belongs in none of those. So the connections
+live in their own file, beside the ledger:
+
+```
+<DSH_HOME>/token-ledger/databases.json
+```
+
+It is written with owner-only permissions (`0600`) and its directory with
+`0700`. The page manages it, so a password is never typed into a JSON file by
+hand and never ends up in a shell history. The shape is one entry per
+connection:
+
+```json
+{
+  "connections": [
+    {
+      "id": "gitea",
+      "name": "Gitea",
+      "type": "mariadb",
+      "host": "127.0.0.1",
+      "port": 3306,
+      "database": "gitea",
+      "user": "gitea",
+      "password": "…",
+      "dumpPath": ""
+    }
+  ]
+}
+```
+
+`type` is `mysql`, `mariadb` or `postgres`; `port` defaults to the one the engine
+listens on; `dumpPath` is where that engine's dump tool is, and an empty one
+means the tool on the `PATH`. The file is read by the host only — the browser
+half never sees a password, and a connection is redacted on the way out.
+
 ### Where the history comes from
 
 A fresh install shows the ledger you already have rather than one that starts today. Two

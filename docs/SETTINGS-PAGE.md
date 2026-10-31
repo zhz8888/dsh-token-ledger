@@ -216,14 +216,27 @@ period**, so this month by workspace can sit above today by model.
   once. The export links carry no `fold`, so every session is in the file.
 - **The file is named for the day the data is from**, not the day it was downloaded:
   a backup read later should say at a glance how old it is.
+- **Database backups.** Give it a MySQL, MariaDB or PostgreSQL connection and it
+  dumps that database to a `.sql` file. The connections and their passwords live
+  in `<DSH_HOME>/token-ledger/databases.json`, readable by your account only, and
+  the dumps are written to `backups/` beside it.
 
-The page reads four loopback-only routes: `GET /api/token-ledger/summary` for the
+  The dump is made by **the database's own tool** (`mysqldump`, `mariadb-dump` or
+  `pg_dump`), so that tool has to be on the machine; when it is not there, the
+  page says so rather than leaving a stack trace behind. The path to it can be
+  set per connection. The password is handed to the tool through a file it reads
+  itself (`--defaults-extra-file`, `PGPASSFILE`), which is deleted as soon as the
+  dump is over, and it **never appears on a command line**.
+
+The page reads five loopback-only routes: `GET /api/token-ledger/summary` for the
 overview, `GET|POST /api/token-ledger/rates` for prices and the rate,
-`GET /api/token-ledger/bill` for the bill, and `GET /api/token-ledger/i18n` for the
-page's own text. Expanding a vendor to all of its models reads the same rates
+`GET /api/token-ledger/bill` for the bill, `GET /api/token-ledger/i18n` for the
+page's own text, and `GET|POST /api/token-ledger/databases` for the database
+connections. Expanding a vendor to all of its models reads the same rates
 route with the vendor named: `GET /api/token-ledger/rates?vendor=<vendor>`. The
-overview polls once a minute, prices and the bill only while their view is open.
-All four refuse a non-loopback peer, so they stay private even if the web server
+overview polls once a minute, prices and the bill only while their view is open,
+and the database connections are read once, when the backup view is opened.
+All five refuse a non-loopback peer, so they stay private even if the web server
 is bound to `0.0.0.0`. The write half additionally requires a JSON content type —
 a cross-origin form cannot send one — and caps the body at 256 KiB.
 

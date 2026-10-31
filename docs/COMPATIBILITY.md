@@ -29,7 +29,7 @@ The requirement is declared the way the ecosystem actually reads it — as
 | --- | --- |
 | `@deepseek-ai/dsh-session-persistence` | It provides `sessionPersistence`, which is where the ledger's usage comes from. |
 | `@deepseek-ai/dsh-commands` | It provides `commands`, which registers `/tokens`. |
-| `@deepseek-ai/dsh-host-webserver` | It provides `webServer`, which serves the three settings routes. |
+| `@deepseek-ai/dsh-host-webserver` | It provides `webServer`, which serves the settings routes. |
 | `@deepseek-ai/dsh-client-locale` | The browser half injects it for the translated labels. |
 | `@deepseek-ai/dsh-client-ui-settings-general` | The browser half injects it to add its section to the settings sidebar. |
 

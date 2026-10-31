@@ -1676,10 +1676,10 @@ test('prices and the bill are fetched only when their view is opened', () => {
   reactEffects.length = 0
   // The overview render registers an effect per view; only the first should fetch.
   render(module, { status: 'loading', data: null, error: null })
-  // Four: the three views, and the effect that reads an expanded list again
+  // Five: the four views, and the effect that reads an expanded list again
   // when the host's catalogue moves. It fetches nothing on its own — it only
   // follows a catalogue that has already arrived.
-  assert.equal(reactEffects.length, 4, 'overview, rates, bill and the expanded lists')
+  assert.equal(reactEffects.length, 5, 'overview, rates, bill, backup and the expanded lists')
   const calls = []
   const realFetch = globalThis.fetch
   let intervals = 0
@@ -1693,10 +1693,11 @@ test('prices and the bill are fetched only when their view is opened', () => {
     return realSetInterval(handler, ms)
   }
   try {
-    // On the overview neither of the other two may read anything: the catalogue is
-    // a couple of hundred rows, and a reader who stays here should not pay for them
-    // nor for a bill they did not ask for.
-    for (const index of [1, 2, 3]) {
+    // On the overview none of the other views may read anything: the catalogue
+    // is a couple of hundred rows, and a reader who stays here should not pay
+    // for them, nor for a bill they did not ask for, nor hold the database
+    // passwords.
+    for (const index of [1, 2, 3, 4]) {
       assert.equal(reactEffects[index](), undefined, 'no cleanup is needed when nothing was started')
     }
     assert.deepEqual(calls, [])
@@ -1761,6 +1762,16 @@ test('prices and the bill are fetched only when their view is opened', () => {
     assert.equal(intervals, 1, 'the bill polls too, because the host keeps folding')
     assert.equal(typeof bill.dispose, 'function')
     bill.dispose()
+
+    // The backup view reads the connections once, and does not poll them: a
+    // connection changes when the reader changes it.
+    calls.length = 0
+    intervals = 0
+    const backup = runEffect('backup', { status: 'loading', data: null, error: null }, 3)
+    assert.deepEqual(calls.map((call) => call.url), ['/api/token-ledger/databases'])
+    assert.equal(intervals, 0, 'the connections are not polled')
+    assert.equal(typeof backup.dispose, 'function')
+    backup.dispose()
   } finally {
     globalThis.fetch = realFetch
     globalThis.setInterval = realSetInterval
@@ -1838,6 +1849,7 @@ test('a price save re-reads the open lists, so an edited row is not left stale',
       DEFAULT,
       DEFAULT,
       DEFAULT,
+      DEFAULT,
       { id: 'my-vendor/my-model', input: '1', output: '', cacheRead: '', cacheWrite: '' },
     )
     const tree = expand(module.__section({ t: fakeT() }))
@@ -1883,6 +1895,7 @@ test('an expanded list is read again when the host\'s catalogue moves', async ()
       DEFAULT,
       DEFAULT,
       DEFAULT,
+      DEFAULT,
       { id: 'my-vendor/my-model', input: '1', output: '', cacheRead: '', cacheWrite: '' },
     )
     reactEffects.length = 0
@@ -1893,13 +1906,13 @@ test('an expanded list is read again when the host\'s catalogue moves', async ()
     // A list already under the catalogue that is on screen has nothing to catch
     // up with, so it is left alone.
     renderWith(2)
-    reactEffects[3]()
+    reactEffects[4]()
     assert.deepEqual(calls, [], 'a list under the current catalogue is not read again')
 
     // The host replaced its catalogue, so the list on screen is under the
     // previous one and is read again rather than left showing old numbers.
     renderWith(1)
-    reactEffects[3]()
+    reactEffects[4]()
     assert.deepEqual(calls, ['/api/token-ledger/rates?vendor=acme'], 'a list under the previous catalogue is read again')
   } finally {
     globalThis.fetch = realFetch
@@ -2048,6 +2061,30 @@ function renderBackupView(module, state = { status: 'ready', data: payload({ led
 }
 
 /**
+ * Render the backup page with its database card.
+ *
+ * @param {object} module - the loaded client module.
+ * @param {object} [databases] - the database fetch state.
+ * @param {(body: object) => void} [onAction] - the action handler.
+ * @returns {{ tree: unknown, asked: object[] }} the render and what it asked for.
+ */
+function renderBackupWithDatabases(module, databases = { status: 'ready', connections: [], backups: [], busy: null, notice: null }, onAction = () => {}) {
+  const asked = []
+  const tree = expand(
+    module.exports.BackupView({
+      t: fakeT(),
+      state: { status: 'ready', data: payload({ ledgerUpdatedAt: new Date(2026, 2, 31, 12, 0, 0).getTime() }), error: null },
+      databases,
+      onDatabase: (body) => {
+        asked.push(body)
+        onAction(body)
+      },
+    }),
+  )
+  return { tree, asked }
+}
+
+/**
  * The section cards, in page order.
  *
  * `findAllByClass` matches a class fragment, and `tl-card-title` contains
@@ -2084,7 +2121,8 @@ test('the bill stacks every grouping, each with every period', () => {
 test('the backup page carries the exports, over every grouping and every period', () => {
   const { module } = loadWithSection()
   const tree = renderBackupView(module)
-  const exports = findAllByClass(tree, 'tl-btn')
+  // The exports are links; the buttons on the page are the database card's.
+  const exports = findAllByClass(tree, 'tl-btn').filter((element) => element.type === 'a')
   assert.equal(exports.length, 2)
   assert.deepEqual(
     exports.map((link) => link.props.href),
@@ -2113,6 +2151,83 @@ test('the backup page says what the file holds', () => {
   for (const key of ['billByWorkspace', 'billBySession', 'billByModel', 'billByVendor', 'rangeMonth', 'rangeYear', 'rangeWeek', 'rangeToday', 'rangeAll']) {
     assert.ok(hasText(text, key), key)
   }
+})
+
+test('the backup page lists the database connections it is given', () => {
+  const { module } = loadWithSection()
+  const { tree } = renderBackupWithDatabases(module, {
+    status: 'ready',
+    connections: [
+      { id: 'gitea', name: 'Gitea', type: 'mariadb', host: '127.0.0.1', port: 3306, database: 'gitea', user: 'gitea', hasPassword: true },
+      { id: 'app', name: 'App', type: 'postgres', host: 'db', port: 5432, database: 'app', user: 'app', hasPassword: true },
+    ],
+    backups: [],
+    busy: null,
+    notice: null,
+  })
+  const text = collectText(tree)
+  assert.ok(hasText(text, 'dbTitle'))
+  // Each connection says what it points at, so a reader can tell two of them
+  // apart without opening anything.
+  assert.ok(hasText(text, 'Gitea'))
+  assert.ok(hasText(text, 'dbTypeMariadb'))
+  assert.ok(hasText(text, '127.0.0.1:3306 / gitea'))
+  assert.ok(hasText(text, 'dbTypePostgres'))
+  assert.ok(hasText(text, 'db:5432 / app'))
+  // A password is never on the page, not even a hint of one.
+  assert.ok(!hasText(text, 'password'))
+})
+
+test('the backup page asks the host to test and to dump a connection', () => {
+  const { module } = loadWithSection()
+  const connection = { id: 'gitea', name: 'Gitea', type: 'mariadb', host: '127.0.0.1', port: 3306, database: 'gitea', user: 'gitea', hasPassword: true }
+  const { tree, asked } = renderBackupWithDatabases(module, {
+    status: 'ready',
+    connections: [connection],
+    backups: [],
+    busy: null,
+    notice: null,
+  })
+  const buttons = findAllByClass(tree, 'tl-btn').filter((element) => element.type === 'button')
+  const test = buttons.find((button) => collectText(button).includes('dbTest'))
+  const dump = buttons.find((button) => collectText(button).includes('dbDump'))
+  assert.ok(test, 'the connection can be tested')
+  assert.ok(dump, 'and dumped')
+  test.props.onClick()
+  assert.deepEqual(asked[0], { action: 'test', id: 'gitea' })
+  dump.props.onClick()
+  assert.deepEqual(asked[1], { action: 'dump', id: 'gitea' })
+})
+
+test('the backup page lists the dumps that are on disk', () => {
+  const { module } = loadWithSection()
+  const { tree } = renderBackupWithDatabases(module, {
+    status: 'ready',
+    connections: [],
+    backups: [{ name: 'gitea-2026-10-31T12-00-00-000Z.sql', bytes: 6 * 1024 * 1024, at: 1 }],
+    busy: null,
+    notice: null,
+  })
+  const text = collectText(tree)
+  assert.ok(hasText(text, 'dbFiles'))
+  assert.ok(hasText(text, 'gitea-2026-10-31T12-00-00-000Z.sql'))
+  assert.ok(hasText(text, '6.0 MB'))
+  // The file is fetched from the host, which serves it as an attachment.
+  const links = findAllByClass(tree, 'tl-db-file').flatMap((file) => file.children.filter((child) => child.type === 'a'))
+  assert.equal(links.length, 1)
+  assert.equal(links[0].props.href, '/api/token-ledger/databases?file=gitea-2026-10-31T12-00-00-000Z.sql')
+})
+
+test('a connection with no password yet says the page has none', () => {
+  const { module } = loadWithSection()
+  const { tree } = renderBackupWithDatabases(module, {
+    status: 'ready',
+    connections: [],
+    backups: [],
+    busy: null,
+    notice: null,
+  })
+  assert.ok(hasText(collectText(tree), 'dbEmpty'), 'the page says there is none rather than showing an empty card')
 })
 
 test('a summarised session line names itself, says it is a summary, and the export is not shortened', () => {

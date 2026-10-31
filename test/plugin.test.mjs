@@ -377,7 +377,7 @@ test('all the settings page routes are registered and logged when a web server e
     },
   })
   try {
-    assert.equal(routes.length, 4, 'the overview, the rates route, the bill route and the dictionaries')
+    assert.equal(routes.length, 5, 'the overview, the rates route, the bill route, the dictionaries and the database connections')
     assert.deepEqual(
       routes.map((route) => [route.kind, route.path]),
       [
@@ -385,6 +385,7 @@ test('all the settings page routes are registered and logged when a web server e
         ['exact', '/api/token-ledger/rates'],
         ['exact', '/api/token-ledger/bill'],
         ['exact', '/api/token-ledger/i18n'],
+        ['exact', '/api/token-ledger/databases'],
       ],
     )
     for (const route of routes) assert.equal(typeof route.handler, 'function')
@@ -396,10 +397,11 @@ test('all the settings page routes are registered and logged when a web server e
       ),
       JSON.stringify(mounted.harness.logs),
     )
-    // Disposing the plugin must hand all four routes back.
+    // Disposing the plugin must hand all five routes back.
     await mounted.harness.dispose()
     assert.deepEqual(disposed.sort(), [
       '/api/token-ledger/bill',
+      '/api/token-ledger/databases',
       '/api/token-ledger/i18n',
       '/api/token-ledger/rates',
       '/api/token-ledger/summary',

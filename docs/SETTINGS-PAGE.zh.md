@@ -147,14 +147,23 @@
   （工作区 / 会话 / 模型 / 供应商 × 本月 / 本年 / 7 天 / 今日 / 全部）的全量，比屏幕上
   同时显示的四段更多。导出的链接不带 `fold`，因此文件里保留每一个会话的明细。
 - **文件名是数据的那一天**，不是下载的那一天：备份日后再看，应该一眼看出它有多旧。
+- **数据库备份**：填一个 MySQL、MariaDB 或 PostgreSQL 的连接，就能把这个库导出成 `.sql`
+  文件。连接与密码保存在 `<DSH_HOME>/token-ledger/databases.json`（只有当前用户可读），
+  导出文件写在同一个目录下的 `backups/`。
+  导出由**数据库自带的工具**完成（`mysqldump` / `mariadb-dump` / `pg_dump`），所以那台机器上
+  要能找到它；找不到时页面会直接说明，而不是留下一段堆栈。工具路径可以单独指定。
+  密码只交给工具自己读的文件（`--defaults-extra-file` / `PGPASSFILE`），导出一结束就删掉，
+  **绝不出现在命令行上**。
 
-页面读四个仅限回环的路由：概览用 `GET /api/token-ledger/summary`，价格与汇率用
+页面读五个仅限回环的路由：概览用 `GET /api/token-ledger/summary`，价格与汇率用
 `GET|POST /api/token-ledger/rates`，账单用 `GET /api/token-ledger/bill`，
-页面文案用 `GET /api/token-ledger/i18n`。
+页面文案用 `GET /api/token-ledger/i18n`，数据库连接用
+`GET|POST /api/token-ledger/databases`。
 展开某个厂商的全部模型时走的还是费率路由，只是带上厂商：
 `GET /api/token-ledger/rates?vendor=<厂商>`。
-概览每分钟轮询一次，价格与账单只在切到各自页面时才拉取。
-四个路由都会拒绝非回环来源，因此即使 web 服务器绑定到 `0.0.0.0` 也不会外泄；
+概览每分钟轮询一次，价格与账单只在切到各自页面时才拉取；数据库连接只在切到备份页时读一次，
+不轮询。
+五个路由都会拒绝非回环来源，因此即使 web 服务器绑定到 `0.0.0.0` 也不会外泄；
 写入那半边还额外要求 JSON 内容类型（跨站表单发不出这种类型），并把请求体限制在 256 KiB。
 
 **文案是数据，不是代码**：中英文词条各自放在 `locale/zh.json` 与 `locale/en.json`，

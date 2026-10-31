@@ -4,6 +4,43 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **The backup page can dump a MySQL, MariaDB or PostgreSQL database.** Give it a
+  connection — type, host, port, database, user and password — and it writes that
+  database to a `.sql` file beside the ledger. Each connection can be tested before
+  it is used, so a wrong password is told apart from a machine with no dump tool.
+
+  **The dump is made by the database's own tool** — `mysqldump`, `mariadb-dump` or
+  `pg_dump` — because a logical dump is a format the database defines and its own
+  client is what writes it. The tool has to be on the machine; the page says so
+  plainly when it is not, and a connection can point at its own copy.
+
+  **The password never reaches a command line.** MySQL and MariaDB read a
+  `--defaults-extra-file` and PostgreSQL reads a `PGPASSFILE`, both written
+  owner-only and deleted as soon as the dump is over. The connections live in
+  `<DSH_HOME>/token-ledger/databases.json`, owner-only, and the browser half
+  never sees a password: a read redacts it and a write carries one, once.
+
+  ### This changes two of the package's standing claims
+
+  The README said, item by item, what the plugin does to the machine it runs on,
+  so that it could be checked rather than guessed. Two of those items are no
+  longer true, and the README now says so:
+
+  - **Commands.** There was no child process, at install time or at run time.
+    There is one now: the dump tool, started when you press **Dump**, with its
+    arguments as an array rather than a command line. There is still no shell.
+  - **Credentials.** No credential was read. The database passwords you type are
+    read now, and kept in the file above.
+
+  The other two are unchanged: the package still installs with no dependencies
+  and no install scripts, and still reads nothing but the session logs and the
+  provider names — plus the database servers you point it at, when you ask it
+  to.
+
 ## [1.1.5] - 2026-10-31
 
 ### Added

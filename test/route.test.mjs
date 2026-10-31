@@ -9,14 +9,19 @@
 
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
 
 import {
   BILL_PATH,
+  DATABASES_PATH,
   I18N_PATH,
   OVERVIEW_PATH,
   RATES_PATH,
   createBillRoute,
+  createDatabasesRoute,
   createI18nRoute,
   createOverviewRoute,
   createRatesRoute,
@@ -96,18 +101,24 @@ function overviewSnapshot(date = dayKeyOf(new Date())) {
  * @returns {object} the response.
  */
 function makeRes() {
-  return {
-    status: 0,
-    headers: null,
-    body: '',
-    writeHead(status, headers) {
-      this.status = status
-      this.headers = headers
-    },
-    end(text) {
-      this.body = text ?? ''
-    },
+  // The stand-in is an emitter, because a dump is streamed into the response
+  // and `pipe` needs a destination it can listen on.
+  const res = new EventEmitter()
+  res.status = 0
+  res.headers = null
+  res.body = ''
+  res.writeHead = (status, headers) => {
+    res.status = status
+    res.headers = headers
   }
+  res.write = (chunk) => {
+    res.body += chunk
+    return true
+  }
+  res.end = (text) => {
+    if (text !== undefined && text !== null) res.body += text
+  }
+  return res
 }
 
 /**
@@ -990,4 +1001,106 @@ test('the rates guard matches the overview guard, on both reads and writes', asy
   // The desktop IPC bridge has no peer address and must keep working.
   const bridged = await callAsync(route, makeReq({ address: undefined }))
   assert.equal(bridged.status, 200)
+})
+
+/**
+ * A stand-in store of database connections.
+ *
+ * @param {object} [overrides] - what to change.
+ * @returns {object} the store.
+ */
+function fakeDatabaseStore(overrides = {}) {
+  const connections = [
+    { id: 'gitea', name: 'Gitea', type: 'mariadb', host: '127.0.0.1', port: 3306, database: 'gitea', user: 'gitea', hasPassword: true },
+  ]
+  // A dump on disk, so the route can stream it the way it streams a real one.
+  const dir = mkdtempSync(join(tmpdir(), 'token-ledger-route-'))
+  writeFileSync(join(dir, 'gitea.sql'), '-- dump\n')
+  return {
+    read: () => ({ connections }),
+    save: (input) => ({ ok: true, connection: { id: 'new', ...input, password: undefined } }),
+    remove: (id) => (id === 'gitea' ? { ok: true } : { ok: false, error: 'unknown connection' }),
+    secret: (id) => (id === 'gitea' ? { id: 'gitea', type: 'mariadb', host: '127.0.0.1', port: 3306, database: 'gitea', user: 'gitea', password: 'secret' } : undefined),
+    backups: () => [{ name: 'gitea-2026-10-31T12-00-00-000Z.sql', bytes: 12, at: 1 }],
+    readBackup: (name) => (name === 'gitea.sql' ? { ok: true, name, path: join(dir, name), size: 7 } : { ok: false, error: 'that dump is not there any more' }),
+    ...overrides,
+  }
+}
+
+test('the databases route is exact on the documented path', () => {
+  const route = createDatabasesRoute({ store: fakeDatabaseStore() })
+  assert.equal(route.kind, 'exact')
+  assert.equal(route.path, DATABASES_PATH)
+  assert.equal(DATABASES_PATH, '/api/token-ledger/databases')
+  assert.equal(typeof route.handler, 'function')
+})
+
+test('a read answers with the connections and the dumps', () => {
+  const route = createDatabasesRoute({ store: fakeDatabaseStore() })
+  const res = call(route, makeReq())
+  assert.equal(res.status, 200)
+  const body = JSON.parse(res.body)
+  assert.equal(body.connections.length, 1)
+  assert.equal(body.connections[0].name, 'Gitea')
+  assert.equal(body.connections[0].password, undefined, 'and no password')
+  assert.equal(body.backups.length, 1)
+})
+
+test('a dump is asked for by name and served as a file', async () => {
+  const route = createDatabasesRoute({ store: fakeDatabaseStore() })
+  const res = await callAsync(route, makeReq({ url: `${DATABASES_PATH}?file=gitea.sql` }))
+  assert.equal(res.status, 200)
+  assert.match(res.headers['content-disposition'], /attachment; filename="gitea\.sql"/)
+  // The file is streamed, so its bytes arrive after the handler has answered.
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  assert.equal(res.body, '-- dump\n')
+  const missing = call(route, makeReq({ url: `${DATABASES_PATH}?file=nope.sql` }))
+  assert.equal(missing.status, 404)
+})
+
+test('a connection is saved and one is removed', async () => {
+  const route = createDatabasesRoute({ store: fakeDatabaseStore() })
+  const saved = await callAsync(route, makeWriteReq({ body: JSON.stringify({ action: 'save', connection: { type: 'mysql', name: 'App', host: 'h', database: 'd', user: 'u' } }) }))
+  assert.equal(saved.status, 200)
+  assert.equal(JSON.parse(saved.body).ok, true)
+  const removed = await callAsync(route, makeWriteReq({ body: JSON.stringify({ action: 'remove', id: 'gitea' }) }))
+  assert.equal(removed.status, 200)
+  const unknown = await callAsync(route, makeWriteReq({ body: JSON.stringify({ action: 'remove', id: 'nope' }) }))
+  assert.equal(unknown.status, 404)
+})
+
+test('a dump that failed is reported with the words of the tool', async () => {
+  const route = createDatabasesRoute({
+    store: fakeDatabaseStore(),
+    dump: async () => ({ ok: false, error: 'Access denied for user gitea' }),
+  })
+  const res = await callAsync(route, makeWriteReq({ body: JSON.stringify({ action: 'dump', id: 'gitea' }) }))
+  assert.equal(res.status, 502)
+  assert.equal(JSON.parse(res.body).error, 'Access denied for user gitea')
+})
+
+test('a connection that worked is reported as such', async () => {
+  const route = createDatabasesRoute({
+    store: fakeDatabaseStore(),
+    test: async () => ({ ok: true }),
+  })
+  const res = await callAsync(route, makeWriteReq({ body: JSON.stringify({ action: 'test', id: 'gitea' }) }))
+  assert.equal(res.status, 200)
+  assert.equal(JSON.parse(res.body).ok, true)
+})
+
+test('the databases guard matches the others, on both reads and writes', async () => {
+  const route = createDatabasesRoute({ store: fakeDatabaseStore() })
+  for (const address of ['192.168.1.20', '203.0.113.9']) {
+    const read = await callAsync(route, makeReq({ address }))
+    assert.equal(read.status, 403, address)
+    const write = await callAsync(route, makeWriteReq({ address }))
+    assert.equal(write.status, 403, address)
+  }
+  // A form on another site cannot send a JSON content type, so it cannot reach
+  // the write half at all.
+  const form = await callAsync(route, makeWriteReq({ contentType: 'application/x-www-form-urlencoded' }))
+  assert.equal(form.status, 415)
+  const origin = await callAsync(route, makeReq({ origin: 'https://evil.example' }))
+  assert.equal(origin.status, 403)
 })

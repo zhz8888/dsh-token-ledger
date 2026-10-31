@@ -25,7 +25,7 @@
 | --- | --- |
 | `@deepseek-ai/dsh-session-persistence` | 它提供 `sessionPersistence`，账本的用量数据来自这里。 |
 | `@deepseek-ai/dsh-commands` | 它提供 `commands`，`/tokens` 靠它注册。 |
-| `@deepseek-ai/dsh-host-webserver` | 它提供 `webServer`，设置页那三个路由靠它提供。 |
+| `@deepseek-ai/dsh-host-webserver` | 它提供 `webServer`，设置页那几个路由靠它提供。 |
 | `@deepseek-ai/dsh-client-locale` | 浏览器半边注入它来拿翻译后的文案。 |
 | `@deepseek-ai/dsh-client-ui-settings-general` | 浏览器半边注入它，把分区加进设置侧边栏。 |
 
