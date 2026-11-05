@@ -214,6 +214,7 @@ dsh-token-ledger help    [选项]       打印用法说明
 | **推理 token 是子集** | 单独报告，绝不相加进总量，因为它本来就在 `outputTokens` 里面。 |
 | **按本地日历日** | 是你所在时区的日，不是 UTC 日。 |
 | **fork 切、resume 不切** | fork 的前缀属于父会话；resume 的前缀是这个会话自己的。 |
+| **会话跟着折叠它的那个来源走** | 一个会话只由一个来源折叠，不会两个来源都推：从日志折叠的会话在运行期间继续由那个日志推进，因此被 resume 的会话边跑边计，而不必等到下次启动。 |
 
 [这些数字是怎么数出来的](docs/COUNTING.zh.md)——计数规则、fork 与 resume 的区分，
 以及审计那两类差异分别意味着什么。
@@ -249,7 +250,7 @@ dsh-token-ledger help    [选项]       打印用法说明
 
 | 能力 | 实际行为 |
 | --- | --- |
-| **文件** | 以只读方式读取 `<DSH_HOME>/sessions/` 下的会话日志；读取 `<DSH_HOME>/settings.yaml` 只为拿到账单上显示的供应商名称。写入只发生在它自己的目录里——`<DSH_HOME>/token-ledger/` 下的 `ledger.json`、`rates.json`、`databases.json` 与 `backups/`——以及你主动要求的导出。该目录之外既不写也不删。 |
+| **文件** | 以只读方式读取 `<DSH_HOME>/sessions/` 下的会话日志——启动时每个日志读一遍，之后每个日志每分钟一次 `readdir` 加一次 `stat`，外加每个正在使用的会话每个活动窗口一次，只有文件真的变大了才读——并读取 `<DSH_HOME>/settings.yaml` 只为拿到账单上显示的供应商名称。写入只发生在它自己的目录里——`<DSH_HOME>/token-ledger/` 下的 `ledger.json`、`rates.json`、`databases.json` 与 `backups/`——以及你主动要求的导出。该目录之外既不写也不删。 |
 | **网络** | 只在费率功能开启时发起普通 HTTPS `GET`：价格目录、美元汇率，以及最多 3 个厂商定价页。`rates: false` 会去掉全部请求。浏览器半边不发起任何外部请求。**备份页会连上你自己配置的数据库服务器**，走的是数据库自己的协议（3306 / 5432），而且只在你按下「测试连接」或「备份」时才会。 |
 | **命令** | 没有 shell——任何东西都不会交给 `sh -c`。**备份页在你按下「备份」时会启动数据库自带的导出工具**（`mysqldump` / `mariadb-dump` / `pg_dump`）作为子进程，参数以数组形式传入，而不是拼成一行命令。除此之外没有子进程，安装时与运行时都没有。它对外提供的是通过宿主自身 `commands` 服务注册的 `/tokens` 斜杠命令，以及你自己运行的 `dsh-token-ledger` 可执行文件。 |
 | **凭据** | 不读取任何**提供方**的凭据：`process.env` 只在未显式传入 home 时用来解析 `DSH_HOME`；不读任何提供方 API key、不碰 keychain、不做 OAuth。**备份页会保存你自己填的数据库密码**，写在 `<DSH_HOME>/token-ledger/databases.json`，只有当前用户可读；密码通过一个文件交给数据库自己的客户端工具，导出一结束就删掉，绝不出现在命令行里。 |
@@ -328,7 +329,7 @@ README 讲的是怎么**用**这个插件；其余细节都在 [`docs/`](docs/RE
 git clone https://github.com/zhz8888/dsh-token-ledger
 cd dsh-token-ledger
 pnpm install
-pnpm test          # 297 个测试，14 个文件
+pnpm test          # 445 个测试，17 个文件
 pnpm run verify    # 打包不变式
 ```
 

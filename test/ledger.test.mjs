@@ -10,7 +10,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { UsageLedger, countersFromUsage, cwdOf, dateKeyOf, emptyCounters, hasInheritedPrefix, inheritedCut, isForkSession, isPeakTime } from '../lib/ledger.js'
+import { UsageLedger, UNATTRIBUTED_ROUTE, countersFromUsage, cwdOf, dateKeyOf, emptyCounters, hasInheritedPrefix, inheritedCut, isForkSession, isPeakTime } from '../lib/ledger.js'
 import {
   ALPHA_EVENTS,
   ALPHA_EXPECTED,
@@ -21,7 +21,11 @@ import {
   DAY1,
   DAY2,
   DAY3,
+  assistantMessage,
   fakeSession,
+  headerEvent,
+  stepEnd,
+  userMessage,
   withSeq,
 } from './fixtures.mjs'
 
@@ -796,6 +800,223 @@ test('the moment the log fold finished survives a round trip', () => {
   assert.equal(restored.logsFoldedAt, 1789038924335)
   assert.equal(restored.ownerOf('s1'), 'log', 'the origin is what keeps the other source away from this cursor')
   assert.equal(restored.snapshot().logsFoldedAt, 1789038924335)
+})
+
+test('rows appended to a owned log are folded against the same cursor', () => {
+  // The cheap continuation a running host uses: it decodes only the bytes the log
+  // gained and hands those rows over. The cursor is the boundary, so the rows are
+  // counted once and the session stays log-owned.
+  const events = withSeq(ALPHA_EVENTS)
+  const ledger = new UsageLedger()
+  ledger.adoptHistory({ sessionId: 'sess-tail', events: events.slice(0, 8), origin: 'log' })
+  const partial = ledger.totals.totalTokens
+  assert.ok(partial < ALPHA_EXPECTED.totalTokens)
+
+  assert.equal(ledger.adoptLogTail('sess-tail', events.slice(8)), true)
+  assert.equal(ledger.totals.totalTokens, ALPHA_EXPECTED.totalTokens)
+  assert.equal(ledger.calls, ALPHA_EXPECTED.calls)
+  assert.equal(ledger.ownerOf('sess-tail'), 'log')
+  assert.equal(ledger.snapshot().cursors['sess-tail'], events.length)
+
+  // An empty tail is not a fold: nothing was counted, so nothing should be written.
+  assert.equal(ledger.adoptLogTail('sess-tail', []), false)
+  assert.equal(ledger.totals.totalTokens, ALPHA_EXPECTED.totalTokens)
+  // A session this fold does not own is not advanced this way, and neither is one
+  // it has never folded — a boundary without a cursor is not a boundary.
+  assert.equal(ledger.adoptLogTail('sess-stranger', events), false)
+  assert.equal(ledger.ownerOf('sess-stranger'), undefined)
+  assert.equal(ledger.adoptLogTail('sess-tail', [...events.slice(-1), ...events.slice(-1)]), true, 'the owned session keeps taking rows')
+})
+
+test('a history replaced by a shorter one is re-derived, not passed over', () => {
+  // A cursor past the end of the array is not "already counted". It means the array
+  // was replaced — a log rewritten to a shorter record, or a stored session whose
+  // events were trimmed — and the rows the cursor counts no longer exist. Folding
+  // "nothing new" there would keep the replaced content's tokens in the ledger
+  // forever, attributed to a history that is gone.
+  const ledger = new UsageLedger()
+  ledger.adoptHistory({ sessionId: 'sess-replaced', events: withSeq(ALPHA_EVENTS), origin: 'log' })
+  assert.equal(ledger.totals.totalTokens, ALPHA_EXPECTED.totalTokens)
+
+  const shorter = withSeq([
+    headerEvent({ provider: 'acme', model: 'replacement', time: DAY1 }),
+    assistantMessage({ turn: 1, step: 1, usage: { inputTokens: 500, outputTokens: 50 }, time: DAY1 }),
+  ])
+  assert.equal(ledger.adoptHistory({ sessionId: 'sess-replaced', events: shorter, origin: 'log' }), true)
+  assert.equal(ledger.calls, 1)
+  assert.equal(ledger.totals.totalTokens, 550)
+  assert.deepEqual(
+    ledger.snapshot().models.map((row) => row.model),
+    ['acme/replacement'],
+  )
+  assert.equal(ledger.snapshot().cursors['sess-replaced'], 2)
+  // And it keeps folding forward from there.
+  ledger.adoptHistory({
+    sessionId: 'sess-replaced',
+    events: [...shorter, assistantMessage({ turn: 2, step: 1, usage: { inputTokens: 25, outputTokens: 25 }, time: DAY1 })],
+    origin: 'log',
+  })
+  assert.equal(ledger.totals.totalTokens, 600)
+})
+
+test('a sentinel row the log fold itself produced is left alone', () => {
+  // A log that names no route anywhere derives the same key on every re-read, so
+  // vetting it would decode it whole on every start and log "re-deriving" without
+  // ever converging. A sentinel row the log fold produced is a fact about the log.
+  const fromLog = new UsageLedger()
+  fromLog.adoptHistory({
+    sessionId: 'sess-log-noroute',
+    events: withSeq([assistantMessage({ turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 5 }, time: DAY1 })]),
+    origin: 'log',
+  })
+  const restored = new UsageLedger()
+  assert.equal(restored.restore(JSON.parse(JSON.stringify(fromLog.snapshot()))), true)
+  assert.deepEqual(restored.repairUnattributedSessions(), [])
+  assert.deepEqual(
+    restored.snapshot().models.map((row) => row.model),
+    [UNATTRIBUTED_ROUTE],
+  )
+  assert.equal(restored.ownerOf('sess-log-noroute'), 'log', 'and it is still followed by its log')
+
+  // The live fold's sentinel is the repairable one: it skipped a prefix without
+  // reading the route out of it, which the log fold's own priming does not.
+  const fromLive = new UsageLedger()
+  fromLive.adoptHistory({
+    sessionId: 'sess-live-noroute',
+    events: withSeq([assistantMessage({ turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 5 }, time: DAY1 })]),
+  })
+  const repair = new UsageLedger()
+  assert.equal(repair.restore(JSON.parse(JSON.stringify(fromLive.snapshot()))), true)
+  assert.deepEqual(repair.repairUnattributedSessions(), [{ sessionId: 'sess-live-noroute', calls: 1, totalTokens: 15 }])
+  assert.deepEqual(repair.snapshot().models, [])
+  assert.equal(repair.ownerOf('sess-live-noroute'), undefined, 'handed back to whichever source has the events')
+})
+
+test('a call with no route at all is billed to the sentinel, and only to it', () => {
+  // The one model key that names no model. A bill has to mention the tokens — they
+  // exist — so the row is real; what matters is that the key is the one the repair
+  // looks for, which is why the constant and the answer the ledger gives are tied
+  // together here.
+  assert.equal(UNATTRIBUTED_ROUTE, 'unknown/unknown')
+  const ledger = new UsageLedger()
+  ledger.adoptHistory({
+    sessionId: 'sess-noroute',
+    events: withSeq([assistantMessage({ turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 5 }, time: DAY1 })]),
+  })
+  assert.deepEqual(
+    ledger.snapshot().models.map((row) => row.model),
+    [UNATTRIBUTED_ROUTE],
+  )
+})
+
+test('a session billed to no model is handed back to the fold, and only that session', () => {
+  // The shape a routing bug leaves in the stored file: calls written under the
+  // sentinel, a cursor saying the session is fully consumed, and a second session
+  // beside it on the same days that must not be touched by the repair.
+  const original = new UsageLedger()
+  original.adoptHistory({
+    sessionId: 'sess-stale',
+    events: withSeq([
+      assistantMessage({ turn: 1, step: 1, usage: { inputTokens: 1000, outputTokens: 100 }, time: DAY1 }),
+      assistantMessage({ turn: 1, step: 2, usage: { inputTokens: 2000, outputTokens: 200 }, time: DAY2 }),
+    ]),
+  })
+  original.adoptHistory({ sessionId: 'sess-good', events: withSeq(ALPHA_EVENTS) })
+  const before = JSON.parse(JSON.stringify(original.snapshot()))
+  assert.deepEqual(before.models.map((row) => row.model).sort(), ['deepseek-official/deepseek-v4-flash', UNATTRIBUTED_ROUTE])
+
+  const restored = new UsageLedger()
+  assert.equal(restored.restore(before), true)
+  assert.deepEqual(restored.repairUnattributedSessions(), [{ sessionId: 'sess-stale', calls: 2, totalTokens: 3300 }])
+
+  // The sentinel row is gone and the other session's numbers are exactly what they
+  // were: every aggregate is a sum of the cross table, so the subtraction leaves no
+  // remainder.
+  const after = restored.snapshot()
+  assert.deepEqual(after.models.map((row) => row.model), ['deepseek-official/deepseek-v4-flash'])
+  assert.equal(restored.totals.totalTokens, ALPHA_EXPECTED.totalTokens)
+  assert.equal(restored.calls, ALPHA_EXPECTED.calls)
+  const day = (key) => after.daily.find((row) => row.date === key)
+  assert.equal(day('2026-01-15').totalTokens, ALPHA_EXPECTED.sessionDays['2026-01-15'])
+  assert.equal(day('2026-01-16').totalTokens, ALPHA_EXPECTED.sessionDays['2026-01-16'])
+  assert.deepEqual(
+    after.sessions.map((session) => session.sessionId),
+    ['sess-good'],
+  )
+
+  // Unowned and unadvanced is what makes it foldable again by either source.
+  assert.equal(restored.ownerOf('sess-stale'), undefined)
+  assert.equal(after.cursors['sess-stale'], undefined)
+  assert.equal(restored.calls, ALPHA_EXPECTED.calls)
+
+  // Re-derived from the events, the calls go to the model that served them.
+  restored.adoptHistory({
+    sessionId: 'sess-stale',
+    events: withSeq([
+      headerEvent({ provider: 'acme', model: 'real-model', time: DAY1 }),
+      assistantMessage({ turn: 1, step: 1, usage: { inputTokens: 1000, outputTokens: 100 }, time: DAY1 }),
+      assistantMessage({ turn: 1, step: 2, usage: { inputTokens: 2000, outputTokens: 200 }, time: DAY2 }),
+    ]),
+  })
+  assert.deepEqual(restored.snapshot().models.map((row) => row.model).sort(), ['acme/real-model', 'deepseek-official/deepseek-v4-flash'])
+  assert.equal(restored.totals.totalTokens, ALPHA_EXPECTED.totalTokens + 3300)
+  // A second repair finds nothing to do: the sentinel is gone rather than moved.
+  assert.deepEqual(restored.repairUnattributedSessions(), [])
+})
+
+test('a row whose provider is known and whose model is not is left to the fold', () => {
+  // Not the sentinel: the harness named the provider and not the model, the log
+  // says the same, and re-folding would derive it again. Repairing it would read
+  // the session's whole log on every start and change nothing.
+  const ledger = new UsageLedger()
+  ledger.adoptHistory({
+    sessionId: 'sess-partial',
+    events: withSeq([
+      { type: 'request/header', time: DAY1, data: { header: { config: { provider: 'acme' } } } },
+      assistantMessage({ turn: 1, step: 1, usage: { inputTokens: 100, outputTokens: 10 }, time: DAY1 }),
+    ]),
+  })
+  const snapshot = JSON.parse(JSON.stringify(ledger.snapshot()))
+  assert.deepEqual(
+    snapshot.models.map((row) => row.model),
+    ['acme/unknown'],
+  )
+
+  const restored = new UsageLedger()
+  assert.equal(restored.restore(snapshot), true)
+  assert.deepEqual(restored.repairUnattributedSessions(), [])
+  assert.deepEqual(
+    restored.snapshot().models.map((row) => row.model),
+    ['acme/unknown'],
+  )
+})
+
+test('a continued fold bills its next call to the model behind the cursor', () => {
+  // A restart keeps the cursors and loses the routes. The call below is the first
+  // event after the cursor, and a fold that only knew how far it had got would
+  // bill it to the sentinel even though the events behind the cursor name the
+  // model that served it.
+  const events = withSeq([
+    headerEvent({ time: DAY1 }),
+    userMessage('first', DAY1),
+    assistantMessage({ turn: 1, step: 1, usage: { inputTokens: 100, outputTokens: 10 }, time: DAY1 }),
+    stepEnd(1, 1, DAY1),
+    userMessage('second', DAY2),
+    assistantMessage({ turn: 2, step: 1, usage: { inputTokens: 200, outputTokens: 20 }, time: DAY2 }),
+  ])
+  const first = new UsageLedger()
+  first.adoptHistory({ sessionId: 'sess-continued', events: events.slice(0, 4) })
+  assert.equal(first.totals.totalTokens, 110)
+
+  const restored = new UsageLedger()
+  assert.equal(restored.restore(JSON.parse(JSON.stringify(first.snapshot()))), true)
+  restored.adoptHistory({ sessionId: 'sess-continued', events })
+
+  assert.equal(restored.totals.totalTokens, 330)
+  assert.deepEqual(
+    restored.snapshot().models.map((row) => row.model),
+    ['deepseek-official/deepseek-v4-flash'],
+  )
 })
 
 /**

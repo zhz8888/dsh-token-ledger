@@ -39,7 +39,7 @@ This project is developed with pnpm, pinned by the `packageManager` field in
 
 ```bash
 pnpm install         # devDependencies only: react, react-dom, and the slot registry DSH runs
-pnpm test            # 297 tests in 14 files
+pnpm test            # 445 tests in 17 files
 pnpm run verify      # packaging invariants (dependency-free, no install scripts, no bare imports)
 ```
 

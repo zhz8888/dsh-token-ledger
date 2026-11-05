@@ -9,18 +9,20 @@
  */
 
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync, appendFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { apply, name } from '../lib/index.js'
-import { ledgerPaths, loadLedger } from '../lib/store.js'
+import { UsageLedger } from '../lib/ledger.js'
+import { ledgerPaths, loadLedger, saveLedger } from '../lib/store.js'
 import { logGenerationOf } from '../lib/session-logs.js'
 import {
   ALPHA_EVENTS,
   BETA_EVENTS,
   BETA_INHERITED,
+  DAY1,
   DAY3,
   assistantMessage,
   encodeSessionLog,
@@ -650,6 +652,12 @@ const EXTRA_STEP = [
   stepEnd(3, 1, DAY3),
 ]
 
+/** A second step appended after the first, worth 30 tokens over one call. */
+const SECOND_EXTRA_STEP = [
+  assistantMessage({ turn: 4, step: 1, usage: { inputTokens: 20, outputTokens: 10, totalTokens: 30 }, time: DAY3 }),
+  stepEnd(4, 1, DAY3),
+]
+
 /**
  * Write a session log where the harness keeps one.
  *
@@ -781,7 +789,9 @@ test('a session folded from disk is not advanced by the live event list', async 
     await mounted.settle()
 
     // The same id arrives live. Its cursor indexes the log's rows, and the live
-    // event list numbers the session differently, so this must change nothing.
+    // event list numbers the session differently, so the live list must change
+    // nothing. What it *does* do is say the session is running; the log is what
+    // carries its events, and an unchanged log carries no new ones.
     mounted.harness.emit('session/created', fakeSession('sess-disk', withSeq(BETA_EVENTS)))
     mounted.harness.emit('session/event', fakeSession('sess-disk', withSeq(BETA_EVENTS)))
     await mounted.settle()
@@ -790,6 +800,7 @@ test('a session folded from disk is not advanced by the live event list', async 
     const snapshot = loadLedger(ledgerPaths(home, {}).ledger)
     assert.equal(snapshot.totals.totalTokens, 6220, 'the disk fold owns this session')
     assert.equal(snapshot.sessions.length, 1)
+    assert.equal(snapshot.origins['sess-disk'], 'log', 'and it still does')
   } finally {
     mounted?.cleanup()
     rmSync(home, { recursive: true, force: true })
@@ -928,3 +939,147 @@ test('dispose waits for the startup work it began', async () => {
     mounted.cleanup()
   }
 })
+
+/**
+ * Append events to a session's log the way a running host does: whole frames after
+ * the bytes already there, so the boundary the previous read reported is still a
+ * frame boundary and the cheap tail read is the one that runs.
+ *
+ * @param {string} path - the session log.
+ * @param {object[]} events - the rows to append.
+ * @returns {void}
+ */
+function appendSessionLog(path, events) {
+  appendFileSync(path, encodeSessionLog(withSeq(events)))
+}
+
+/**
+ * Append events to a session's log the way a running session does, and date the
+ * file forward so no pass can mistake it for the file it already read.
+ *
+ * @param {string} path - the session log.
+ * @param {object[]} events - the log's whole content after the write.
+ * @returns {void}
+ */
+function growSessionLog(path, events) {
+  writeFileSync(path, encodeSessionLog(withSeq(events), { eventsPerFrame: 3 }))
+  const later = new Date(Date.now() + 5000)
+  utimesSync(path, later, later)
+}
+
+/** Milliseconds of real time a test waits, for the timers the plugin runs. */
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+test('a session the log fold owns is caught up while the host runs', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'token-ledger-logs-'))
+  let mounted
+  try {
+    const path = writeSessionLog(home, 'sess-disk', ALPHA_EVENTS)
+    mounted = await mount({ home })
+    await mounted.settle()
+
+    // The session is resumed in this run, and the host appends rows as they commit
+    // — whole frames after the bytes already there, which is the cheap read this
+    // fix exists for. The live event list cannot advance the session (its cursor
+    // indexes the log's rows), so the re-read is the only thing that can.
+    appendSessionLog(path, EXTRA_STEP)
+    mounted.harness.emit('session/event', fakeSession('sess-disk', withSeq(ALPHA_EVENTS)))
+    // One refresh window, plus the room the write that follows it needs.
+    await wait(2400)
+    await mounted.settle()
+
+    const beforeDispose = loadLedger(ledgerPaths(home, {}).ledger)
+    assert.equal(beforeDispose.totals.totalTokens, 6220 + 15, 'the running session is counted, not only the next start')
+    assert.equal(beforeDispose.totals.calls, 6)
+
+    // A second growth that rewrites the file instead of appending to it — a log
+    // rolled to a new record, where the boundary the last read reported no longer
+    // lines up. The whole-file path has to catch that step too, without re-counting
+    // the one before it.
+    growSessionLog(path, [...ALPHA_EVENTS, ...EXTRA_STEP, ...SECOND_EXTRA_STEP])
+    mounted.harness.emit('session/event', fakeSession('sess-disk', withSeq(ALPHA_EVENTS)))
+    await wait(2400)
+    await mounted.settle()
+
+    const afterSecond = loadLedger(ledgerPaths(home, {}).ledger)
+    assert.equal(afterSecond.totals.totalTokens, 6220 + 15 + 30)
+    assert.equal(afterSecond.totals.calls, 7)
+
+    await mounted.harness.dispose()
+    const snapshot = loadLedger(ledgerPaths(home, {}).ledger)
+    assert.equal(snapshot.totals.totalTokens, 6220 + 15 + 30)
+  } finally {
+    mounted?.cleanup()
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('a session close is the moment its log is read', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'token-ledger-logs-'))
+  let mounted
+  try {
+    const path = writeSessionLog(home, 'sess-disk', ALPHA_EVENTS)
+    mounted = await mount({ home })
+    await mounted.settle()
+
+    // A closed session is not going to produce another event, so its log is read
+    // at once rather than on the next window — from the offset the mount reported,
+    // so only the appended frame is decoded.
+    appendSessionLog(path, EXTRA_STEP)
+    mounted.harness.emit('session/disposed', fakeSession('sess-disk', withSeq(ALPHA_EVENTS)))
+    await mounted.settle()
+    await mounted.harness.dispose()
+
+    const snapshot = loadLedger(ledgerPaths(home, {}).ledger)
+    assert.equal(snapshot.totals.totalTokens, 6220 + 15)
+    assert.equal(snapshot.totals.calls, 6)
+  } finally {
+    mounted?.cleanup()
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('a stored ledger carrying calls billed to no model is repaired at mount', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'token-ledger-repair-'))
+  let mounted
+  try {
+    // The log names the model that served every call. The stored ledger was
+    // written by the *live* fold before the routing fix — the shape the real
+    // defect left behind — so its calls sit under the sentinel and its cursor says
+    // the session is fully consumed, which a corrected fold cannot repair on its
+    // own. (A sentinel the log fold itself produced is left alone: re-reading its
+    // log would derive the same key.)
+    writeSessionLog(home, 'sess-disk', ALPHA_EVENTS)
+    const buggy = new UsageLedger()
+    buggy.adoptHistory({
+      sessionId: 'sess-disk',
+      events: withSeq(ALPHA_EVENTS.filter((event) => event.type !== 'request/header')),
+    })
+    const stored = JSON.parse(JSON.stringify(buggy.snapshot()))
+    assert.equal(stored.models[0].model, 'unknown/unknown')
+    saveLedger(ledgerPaths(home, {}).ledger, stored)
+
+    mounted = await mount({ home })
+    await mounted.settle()
+    await mounted.harness.dispose()
+
+    const snapshot = loadLedger(ledgerPaths(home, {}).ledger)
+    assert.deepEqual(
+      snapshot.models.map((row) => row.model),
+      ['deepseek-official/deepseek-v4-flash'],
+      'the sentinel row is gone and the calls name their model',
+    )
+    assert.equal(snapshot.totals.totalTokens, 6220, 'and no token was lost or counted twice')
+    assert.equal(snapshot.totals.calls, 5)
+    assert.ok(
+      mounted.harness.logs.some(
+        ([level, args]) => level === 'info' && String(args[0]).includes('re-deriving') && args[1] === 1 && args[2] === 5,
+      ),
+      JSON.stringify(mounted.harness.logs),
+    )
+  } finally {
+    mounted?.cleanup()
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+

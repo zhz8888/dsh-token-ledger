@@ -4,6 +4,76 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **A session the ledger took from disk keeps counting while the host runs.** A
+  session whose history was folded from its log is owned by that log: its cursor
+  indexes the log's compact rows, and the live event list numbers the same session
+  differently, so the live fold refuses to advance it. That is right — but nothing
+  else did either. The log was re-read on `session/disposed`, which a desktop
+  session that stays open never emits, so a session resumed *after* the mount ran
+  to the end of its log with every call it made missing from the ledger. On a real
+  home that was **557 calls worth 213,106,082 tokens** — about 3% of everything the
+  ledger held — and the models those calls used, `workbuddy/hy4std` and
+  `workbuddy/hy4free`, appeared in no table at all. That is what "the plugin does
+  not know the models I am using" looks like from the page.
+
+  The log is now re-read once per activity window for every session the host says
+  is running, once a minute for every log the ledger follows, and once more on the
+  way out. The re-read decodes only the bytes appended since the last one, so it
+  costs about a millisecond rather than the 130 ms a 2.3 MB log takes to decode
+  whole, and the cursor keeps it from counting anything twice. Where the previous
+  read stopped is reported rather than guessed; the unfinished line of that read
+  travels with it, because a row split across two frames must be parsed as one
+  line; and bytes that are not a frame boundary — a log rewritten to a shorter
+  file, or a frame that has been completed since its readable part was counted —
+  are refused, with the whole file folded instead, which is the one read that
+  cannot double count. A log the harness rolls to a newer generation is followed,
+  because the older file stays on disk and a path that still exists is not the
+  record. A history that arrives *shorter* than the cursor was — a log replaced by
+  a smaller record, or a stored session whose events were trimmed — is re-derived
+  rather than passed over: folding "nothing new" there would leave the replaced
+  content's tokens in the ledger forever, attributed to a history that is gone.
+
+  A pass that finds nothing to fold now also records that it accounted for every
+  log. It used to return before raising the watermark, so every file written since
+  the previous pass — which is every file a day of use touches — was read again on
+  the next start instead of stat'ed.
+
+- **A stored ledger no longer keeps a model called `unknown/unknown`.** A call
+  whose route the fold never learned is billed to that key, and the routing bug
+  fixed in 1.1.4 had written **24 calls worth 16,181,214 tokens** to it on a real
+  home. The row could not repair itself: the corrected fold starts behind a cursor
+  that says the session is fully consumed, so the events that name the model were
+  never read again — and the ledger's version gate cannot help, because the file's
+  *shape* and the fold's *semantics* are both fine, only its content is stale.
+
+  The affected sessions are now handed back to the fold when the ledger is loaded.
+  Their rows are subtracted out of the total, the day rows and the model rows, and
+  their cursors are dropped, so the log fold re-reads them and bills every call to
+  the model that served it. Nothing is approximated: every aggregate is a sum of
+  the usage cross table, and the subtraction is exact. On the real home above the
+  session's 252 calls went back to `commandcode/deepseek/deepseek-v4.1-flash`, the
+  token count did not move by one on either side, and an audit against a fresh fold
+  of all 224 session logs then matched the stored ledger exactly.
+
+  Only the exact sentinel is repaired, and only for a session the *live* fold
+  wrote. A row keyed `someprovider/unknown` means the harness named the provider and
+  not the model, and a row the log fold produced itself means the log names no route
+  anywhere: re-folding either derives the same key, so repairing them would decode
+  those files whole on every start and never converge.
+
+- **A continued fold bills its next call to the model behind its cursor.** The
+  cursor survives a restart; the in-memory route that went with it does not. So the
+  first call folded in a new process — a compaction summary, or a step committed
+  while the harness was still shutting down — could be billed to
+  `unknown/unknown` even though the events before the cursor name the model. The
+  route is now read out of the events the cursor has already passed, once per
+  session per process, which is the same header a forward scan would have left
+  behind.
+
 ## [1.2.0] - 2026-11-01
 
 ### Added

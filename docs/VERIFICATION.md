@@ -1169,6 +1169,173 @@ connection reset, one connect timeout). The plugin's offline-first design is for
 exactly that: the last good catalogue keeps being served and the failed attempt
 is reported, rather than the page going blank.
 
+## The live fold that stopped following, 2026-11-05 — measured on a real home
+
+Two defects were reported against the running plugin: the settings page did not
+show the models that had just been used, and the stored ledger carried a model
+called `unknown/unknown`. Both were reproduced here, and both come from the same
+place — what happens to a session *after* the fold that took it.
+
+| Item | Value |
+| --- | --- |
+| Date | 2026-11-05 |
+| OS | Windows (win32) |
+| Node.js | v24.15.0 |
+| DSH | `@deepseek-ai/dsh-*` 0.2.2-rc.1, desktop app `dsh-desktop-next` 2.0.22-next |
+| Home under test | the real one, 225 stored session logs, 155.8 MB, copied for the runs that write |
+
+### A resumed session was not counted while it ran
+
+A session whose history is folded from its log on disk is owned by that log: its
+cursor indexes the log's compact rows, and the live event list numbers the same
+session in another coordinate space, so the live fold refuses it. That left the
+log as the only thing able to advance the session — and nothing advanced it
+during a run. It was read again at the next mount and on `session/disposed`,
+which a desktop session that stays open never emits.
+
+So a session resumed *after* the mount ran to the end of its log with every call
+it made missing. Measured on the real home, before the fix:
+
+```
+$ node bin/dsh-token-ledger.mjs audit
+scanned 225 session log(s), 172015 events, 157 forked session(s), 0 unreadable
+
+  stored      24201 calls  5978363307 tokens
+  recomputed  24758 calls  6191469389 tokens
+
+  audit: match — 1 session(s) advanced after the ledger was written
+         (557 calls, 213106082 tokens not yet flushed)
+```
+
+The audit's own reading was correct — that session had kept running, and the file
+was written before its newest events. The ledger was nonetheless **557 calls and
+213,106,082 tokens behind** (about 3% of everything it held), and the models those
+calls used were in no table at all: the page showed six models where the logs name
+eight. A fresh fold of that one session's log attributed every call:
+
+| Model | Calls | Tokens |
+| --- | --- | --- |
+| `workbuddy/deepseek-v4.1-flash` | 350 | 99,378,898 |
+| `workbuddy/hy4std` | 102 | 54,688,116 |
+| `workbuddy/hy4free` | 48 | 22,917,680 |
+| `commandcode/deepseek/deepseek-v4.1-flash` | 57 | 36,121,388 |
+
+### The `unknown/unknown` row could not be repaired by any later fold
+
+The same home carried **24 calls worth 16,181,214 tokens** billed to the sentinel
+key — one session, 2026-11-01 — written by the live fold before the routing fix in
+1.1.4. A cursor says the session it covers is fully consumed, so the corrected
+fold never looks at those events again: the row was permanent. The ledger's version
+gate is no help either, because the file's shape and the fold's semantics are both
+correct — only its content is stale. A `rebuild --write` was the only thing that
+would ever clear it, and nothing tells a reader to run one.
+
+### What the fixed code does on the same data
+
+A copy of the real home — the ledger file plus all 225 session logs — was mounted
+with the fixed code, the way a restarted host mounts it:
+
+```
+info [token-ledger] re-deriving 1 session(s) billed to an unknown route (252 calls, 110520170 tokens)
+info [token-ledger] folded 2 session log(s) from disk, 0 skipped; total 6189868774 tokens over 24738 calls
+```
+
+- The sentinel row is gone and the session's **252 calls** are back on
+  `commandcode/deepseek/deepseek-v4.1-flash`. Its token total moved by zero on both
+  sides (110,520,170 before the repair, 110,520,170 after re-deriving it).
+- The 557 missing calls were folded, and `workbuddy/hy4std` and
+  `workbuddy/hy4free` are in the model table.
+- An audit against a fresh fold of the copy's logs then matched exactly:
+
+```
+scanned 225 session log(s), 172520 events, 158 forked session(s), 0 unreadable
+
+  stored      24832 calls  6204324654 tokens
+  recomputed  24832 calls  6204324654 tokens
+
+  audit: match — the stored ledger equals a fresh fold of the raw logs
+```
+
+The copy is taken while the home is in use, so its totals are that moment's; that
+the two sides are equal is the point, not the number. This verification session is
+taken out of the copy first — its rows vetted out of the copied ledger, and its log
+dropped when it can be located — because a live session's log and the ledger file
+cannot be snapshotted consistently while the host is writing both. Where the log
+was left in place, the vetting had handed that session back to the fold, and
+folding it from its log agreed with the fresh fold too.
+
+### The re-read is proportional to what was appended
+
+Following a log every couple of seconds with a whole-file decode would have been a
+stall the model loop feels, so the cost was measured before choosing the reader.
+The twelve largest logs in the home, whole-file decode (`readSessionLogState`)
+against a tail read from the end boundary (`readSessionLogTail`):
+
+```
+2.56 MB  first read (4576 rows) 151.0 ms | tail read (0 new rows) 0.53 ms
+2.49 MB  first read (2160 rows) 118.6 ms | tail read (0 new rows) 0.32 ms
+2.38 MB  first read (2968 rows) 115.5 ms | tail read (0 new rows) 0.29 ms
+2.34 MB  first read (3440 rows) 123.3 ms | tail read (0 new rows) 0.26 ms
+2.30 MB  first read (3274 rows) 114.4 ms | tail read (0 new rows) 0.36 ms
+```
+
+A tail read with nothing new costs about a third of a millisecond; with a step's
+worth of rows appended it is a millisecond or so, because only those bytes are
+decoded. The first read of a log in a process is the whole file — it is also what
+recovers the route from the events behind the cursor — and the mount pass was
+already paying that.
+
+What makes the cheap read safe is tested directly (`test/session-log.test.mjs`):
+the previous read reports where it stopped rather than the next one guessing; a
+torn frame is handed back whole when it can be read at all, and those rows are
+never handed over twice — the offset then points past them, and a read that begins
+inside the frame is refused rather than duplicated; a line split across two frames
+is parsed once as one line; and bytes that are not a frame boundary — a rewritten
+or replaced log — are refused, so the caller folds the file from the start, which is
+the one read that cannot double count whatever the file became.
+
+### The running host keeps up
+
+Three behaviours are asserted in the suite rather than measured once here
+(`test/plugin.test.mjs`):
+
+- a session the log fold owns is caught up **while the host runs**: the log grows,
+  the host reports the session as live, and the new step is in the stored ledger
+  after one refresh window (the test waits 2.4 s of real time);
+- a session close reads its log at once, not on the next window;
+- a stored ledger carrying sentinel rows is repaired at mount, and the row is gone;
+- a history that arrives *shorter* than the cursor was — a log replaced by a smaller
+  record, or a stored session whose events were trimmed — is re-derived rather than
+  passed over, and a sentinel row the log fold itself produced is left alone, since
+  re-reading that log derives the same key.
+
+The one-minute sweep was measured end-to-end, because it has no event to trigger
+it: one `assistant/message` worth **1,111 tokens** was appended to a log the mounted
+ledger owned, with no `session/event` delivered to the plugin, and one sweep
+interval later the stored session total had moved by exactly 1,111 — no more, so
+nothing was counted twice.
+
+What a reader sees: a call is in the in-memory ledger within one refresh window
+(2 s), written to `ledger.json` by a 0 ms timer a moment later, and on the settings
+page at its next poll (`POLL_MS` = 60 s, and immediately when the section is
+opened). Before this, it was "at the next restart".
+
+### Suite and packaging
+
+`node --test --experimental-test-isolation=none test/*.test.mjs` — **445 tests in
+17 files, 444 passing, 1 skipped** (`the file of connections is written owner-only`,
+which needs POSIX permissions), in 6.2 s. `node scripts/verify-package.mjs` — all
+**83 packaging checks** pass. (`pnpm run verify` itself could not run in this
+session: pnpm wanted to purge `node_modules` and refuses that without a TTY, so the
+script it wraps was run directly.)
+
+### What this section does not cover
+
+- **The desktop window.** The page was not looked at; the fix is measured at the
+  ledger and the route, and the panel's 60-second poll is read from `POLL_MS`.
+- **A second process writing the same home.** The sweep exists for it, and the
+  sweep is measured — but with the append made by this script, not by a second DSH.
+
 ## Not verified
 
 Stated plainly, because a verification file that only lists successes is not

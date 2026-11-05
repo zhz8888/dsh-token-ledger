@@ -10,11 +10,27 @@
  */
 
 import assert from 'node:assert/strict'
+import { mkdtempSync, renameSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { zstdCompressSync } from 'node:zlib'
 import { test } from 'node:test'
 
-import { decodeSessionLogBuffer, frameLengthAt, parseJsonLines, splitZstdFrames } from '../lib/session-log.js'
+import { decodeSessionLogBuffer, frameLengthAt, parseJsonLines, readSessionLogState, readSessionLogTail, splitZstdFrames } from '../lib/session-log.js'
 import { ALPHA_EVENTS, encodeSessionLog, withSeq } from './fixtures.mjs'
+
+/**
+ * Write a log to a temporary file and hand back its path.
+ *
+ * @param {Buffer} buffer - the encoded log.
+ * @returns {{ path: string, cleanup: () => void }} the file, and how to remove it.
+ */
+function temporaryLog(buffer) {
+  const directory = mkdtempSync(join(tmpdir(), 'token-ledger-tail-'))
+  const path = join(directory, 'session.jsonl.zstd')
+  writeFileSync(path, buffer)
+  return { path, cleanup: () => rmSync(directory, { recursive: true, force: true }) }
+}
 
 test('splits concatenated frames and covers every byte', () => {
   const events = withSeq(ALPHA_EVENTS)
@@ -102,4 +118,166 @@ test('parseJsonLines skips the torn trailing line a killed writer leaves', () =>
 test('an empty log decodes to no events', () => {
   const empty = zstdCompressSync(Buffer.from(''))
   assert.deepEqual(decodeSessionLogBuffer(empty), [])
+})
+
+test('what a whole read consumed is where the next read starts', () => {
+  // A whole read reports the bytes it consumed, which is what a tail read continues
+  // from. A log that ends on an unfinished frame is the awkward case: Node's
+  // Zstandard decodes the finished part of the frame, so those rows are counted and
+  // the bytes must not be decoded again — which is why the reported size is the end
+  // of the file here rather than the frame's start, and why the next read refuses an
+  // offset inside the frame instead of handing the rows over twice.
+  const events = withSeq(ALPHA_EVENTS)
+  const buffer = encodeSessionLog(events, { eventsPerFrame: 2 })
+  const frames = splitZstdFrames(buffer)
+  const last = frames[frames.length - 1]
+  const file = temporaryLog(buffer)
+  try {
+    const whole = readSessionLogState(file.path)
+    assert.equal(whole.size, buffer.length)
+    assert.deepEqual(whole.records, events)
+
+    // Killed mid-write: the completed frames and the readable part of the last one.
+    writeFileSync(file.path, buffer.subarray(0, buffer.length - 5))
+    const torn = readSessionLogState(file.path)
+    assert.equal(torn.size, buffer.length - 5, 'the readable part of the last frame is consumed')
+    assert.deepEqual(torn.records, events.slice(0, events.length - 2))
+
+    // Completing the frame moves the file past that offset, and the tail read from
+    // it is refused rather than handing back rows it already counted.
+    writeFileSync(file.path, buffer)
+    assert.equal(readSessionLogTail(file.path, { offset: torn.size, tail: '' }), undefined)
+    // A boundary the read really ended on (the last complete frame) is accepted.
+    const clean = readSessionLogTail(file.path, { offset: last.offset, tail: '' })
+    assert.deepEqual(clean.records, events.slice(-2))
+    assert.equal(clean.offset, buffer.length)
+  } finally {
+    file.cleanup()
+  }
+})
+
+test('a tail read returns only the frames after its offset', () => {
+  // The point of the tail reader: a running session's log is re-read every couple
+  // of seconds, and decoding a 2.3 MB file was measured at 130 ms. What it may not
+  // do is count a row twice or miss one, so the offset is a frame boundary the
+  // previous read reported.
+  const events = withSeq(ALPHA_EVENTS)
+  const head = encodeSessionLog(events.slice(0, 6), { eventsPerFrame: 2 })
+  const rest = encodeSessionLog(events.slice(6), { eventsPerFrame: 2 })
+  const file = temporaryLog(Buffer.concat([head, rest]))
+  try {
+    const first = readSessionLogTail(file.path, { offset: 0, tail: '' })
+    assert.deepEqual(first.records, events)
+    assert.equal(first.offset, head.length + rest.length)
+    assert.equal(first.size, head.length + rest.length)
+    assert.equal(first.tail, '')
+
+    // Appending a frame: the next read starts where the last one stopped.
+    const more = encodeSessionLog([...events.slice(-1), { type: 'step/end', seq: 99, time: 0, data: { turn: 9, step: 1 } }], {
+      eventsPerFrame: 2,
+    })
+    writeFileSync(file.path, Buffer.concat([head, rest, more]))
+    const next = readSessionLogTail(file.path, { offset: first.offset, tail: first.tail })
+    assert.equal(next.records.length, 2)
+    assert.equal(next.offset, head.length + rest.length + more.length)
+    // And a read with nothing new costs an empty answer, not a re-decode.
+    const idle = readSessionLogTail(file.path, { offset: next.offset, tail: next.tail })
+    assert.deepEqual(idle.records, [])
+    assert.equal(idle.offset, next.offset)
+  } finally {
+    file.cleanup()
+  }
+})
+
+test('a torn frame is left for the next read rather than half-read', () => {
+  const events = withSeq(ALPHA_EVENTS)
+  const head = encodeSessionLog(events.slice(0, 4), { eventsPerFrame: 2 })
+  const rest = encodeSessionLog(events.slice(4), { eventsPerFrame: 2 })
+  const file = temporaryLog(Buffer.concat([head, rest]))
+  try {
+    const first = readSessionLogTail(file.path, { offset: 0, tail: '' })
+    assert.deepEqual(first.records, events)
+
+    // The writer started another frame and has not finished it. Its bytes are not
+    // consumed, so the next read starts at its magic number and sees it whole.
+    const tailFrame = zstdCompressSync(Buffer.from(`${JSON.stringify({ type: 'step/end', seq: 99 })}\n`))
+    writeFileSync(file.path, Buffer.concat([head, rest, tailFrame.subarray(0, tailFrame.length - 5)]))
+    const torn = readSessionLogTail(file.path, { offset: first.offset, tail: first.tail })
+    assert.deepEqual(torn.records, [])
+    assert.equal(torn.offset, first.offset, 'the unfinished frame stays unread')
+
+    writeFileSync(file.path, Buffer.concat([head, rest, tailFrame]))
+    const completed = readSessionLogTail(file.path, { offset: torn.offset, tail: torn.tail })
+    assert.equal(completed.records.length, 1)
+    assert.equal(completed.offset, head.length + rest.length + tailFrame.length)
+  } finally {
+    file.cleanup()
+  }
+})
+
+test('a line split across two frames is parsed as one line', () => {
+  // Nothing in the format promises a frame ends on a line boundary, and two halves
+  // of one row parse as neither. The unfinished line travels with the read.
+  const first = zstdCompressSync(Buffer.from('{"type":"a"}\n{"type":"b'))
+  const second = zstdCompressSync(Buffer.from('"}\n{"type":"c"}\n'))
+  const file = temporaryLog(Buffer.concat([first, second]))
+  try {
+    const read = readSessionLogTail(file.path, { offset: 0, tail: '' })
+    // The row split between the two frames is one row, not a broken row and a
+    // fragment of another.
+    assert.deepEqual(read.records, [{ type: 'a' }, { type: 'b' }, { type: 'c' }])
+    assert.equal(read.tail, '', 'the last line is complete, so nothing is carried')
+
+    const onlyHead = temporaryLog(first)
+    try {
+      const partial = readSessionLogTail(onlyHead.path, { offset: 0, tail: '' })
+      assert.deepEqual(partial.records, [{ type: 'a' }])
+      assert.equal(partial.tail, '{"type":"b')
+    } finally {
+      onlyHead.cleanup()
+    }
+  } finally {
+    file.cleanup()
+  }
+})
+
+test('bytes that are not a frame boundary are refused, not guessed at', () => {
+  const events = withSeq(ALPHA_EVENTS)
+  const buffer = encodeSessionLog(events, { eventsPerFrame: 2 })
+  const frames = splitZstdFrames(buffer)
+  const file = temporaryLog(buffer)
+  try {
+    // An offset inside a frame is what a rewritten or relocated log looks like.
+    assert.equal(readSessionLogTail(file.path, { offset: frames[0].offset + 3, tail: '' }), undefined)
+    // An offset past the end says the file was replaced by a shorter one.
+    assert.equal(readSessionLogTail(file.path, { offset: buffer.length + 10, tail: '' }), undefined)
+    // A structural fault at the boundary is the same answer, because the caller can
+    // always fold the file from the start: a truncated frame is the one case that is
+    // not refused, and it is handled above.
+    const replaced = temporaryLog(Buffer.from('this is not a log at all'))
+    try {
+      assert.equal(readSessionLogTail(replaced.path, { offset: 0, tail: '' }), undefined)
+    } finally {
+      replaced.cleanup()
+    }
+  } finally {
+    file.cleanup()
+  }
+})
+
+test('a log replaced by a shorter one is refused rather than read from a stale offset', () => {
+  const events = withSeq(ALPHA_EVENTS)
+  const file = temporaryLog(encodeSessionLog(events, { eventsPerFrame: 2 }))
+  try {
+    const first = readSessionLogTail(file.path, { offset: 0, tail: '' })
+    // A generation migration rewrites the file; a read that begins at the old end
+    // would start in the middle of the new file's bytes.
+    const shorter = encodeSessionLog(events.slice(0, 2), { eventsPerFrame: 2 })
+    const other = join(tmpdir(), 'token-ledger-rewritten.jsonl.zstd')
+    writeFileSync(other, shorter)
+    renameSync(other, file.path)
+    assert.equal(readSessionLogTail(file.path, { offset: first.offset, tail: first.tail }), undefined)
+  } finally {
+    file.cleanup()
+  }
 })

@@ -33,7 +33,7 @@ git log --oneline upstream/main..main      # 本 fork 多出来的东西
 
 ```bash
 pnpm install         # devDependency 只有三个：react、react-dom，以及 DSH 跑的那个槽位注册表
-pnpm test            # 297 个测试，14 个文件
+pnpm test            # 445 个测试，17 个文件
 pnpm run verify      # 打包不变式（零依赖、无安装脚本、无裸模块说明符）
 ```
 

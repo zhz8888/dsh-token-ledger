@@ -226,6 +226,7 @@ and the two languages carry the same key set.
 | **Reasoning tokens are a subset** | Reported separately, never added into the total, because they are already inside `outputTokens`. |
 | **Local calendar days** | Days are your days, not UTC days. |
 | **Forks are cut, resumes are not** | A fork's prefix belongs to the parent session; a resume's prefix is this session's own. |
+| **A session is followed by the source that folded it** | One source per session, never both: a session folded from its log keeps being folded from that log while it runs, so a resumed session's calls are counted as they land instead of at the next start. |
 
 [How the numbers are counted](docs/COUNTING.md) — the rules, how a fork is told
 from a resume, and what the audit's two kinds of difference mean.
@@ -267,7 +268,7 @@ than inferred:
 
 | Capability | What it actually does |
 | --- | --- |
-| **Files** | Reads the session logs under `<DSH_HOME>/sessions/`, read-only, and reads `<DSH_HOME>/settings.yaml` for the provider display names a bill shows. Writes four things in its own directory — `<DSH_HOME>/token-ledger/ledger.json`, `rates.json`, `databases.json` and the `backups/` folder — plus exports where you ask for them. Nothing outside that directory is written or removed. |
+| **Files** | Reads the session logs under `<DSH_HOME>/sessions/`, read-only — every log once on startup, and afterwards a `readdir` and a `stat` per log per minute plus one per activity window for each session in use, with a read only when the file actually grew — and reads `<DSH_HOME>/settings.yaml` for the provider display names a bill shows. Writes four things in its own directory — `<DSH_HOME>/token-ledger/ledger.json`, `rates.json`, `databases.json` and the `backups/` folder — plus exports where you ask for them. Nothing outside that directory is written or removed. |
 | **Network** | Plain HTTPS `GET`s, and only while the rates feature is on: the price catalogue, the USD/CNY rate, and at most three vendor pricing pages. `rates: false` removes every one of them. The browser half makes no external request at all. **The backup page opens a connection to the database servers you configure**, over their own protocol (3306 or 5432), and only when you press **Test** or **Dump**. |
 | **Commands** | No shell — nothing is ever handed to `sh -c`. **The backup page starts the database's own dump tool** (`mysqldump`, `mariadb-dump` or `pg_dump`) as a child process when you press **Dump**, with its arguments as an array rather than a command line. Apart from that there is no child process, at install time or at run time. What it exposes is the `/tokens` slash command and the `dsh-token-ledger` binary you run yourself. |
 | **Credentials** | No provider credential is read: `process.env` is consulted only to resolve `DSH_HOME`; no provider API key, no keychain, no OAuth. **The backup page keeps the database passwords you type**, in `<DSH_HOME>/token-ledger/databases.json`, readable by your account only. They are handed to the database's own client tool through a file that is deleted as soon as the dump is over, and they never appear on a command line. |
@@ -358,7 +359,7 @@ Issues and pull requests are welcome.
 git clone https://github.com/zhz8888/dsh-token-ledger
 cd dsh-token-ledger
 pnpm install
-pnpm test          # 297 tests in 14 files
+pnpm test          # 445 tests in 17 files
 pnpm run verify    # packaging invariants
 ```
 
