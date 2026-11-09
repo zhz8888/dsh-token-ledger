@@ -122,11 +122,12 @@ test('an empty log decodes to no events', () => {
 
 test('what a whole read consumed is where the next read starts', () => {
   // A whole read reports the bytes it consumed, which is what a tail read continues
-  // from. A log that ends on an unfinished frame is the awkward case: Node's
-  // Zstandard decodes the finished part of the frame, so those rows are counted and
-  // the bytes must not be decoded again — which is why the reported size is the end
-  // of the file here rather than the frame's start, and why the next read refuses an
-  // offset inside the frame instead of handing the rows over twice.
+  // from. A log that ends on an unfinished frame is the awkward case: Zstandard
+  // cannot decode a frame that was not written whole — it yields no rows at all
+  // rather than the part that was written — so the frame is left for the next read
+  // and the boundary reported is the one in front of it. Nothing of that frame was
+  // counted, so when the writer finishes it the tail read takes it whole, and none
+  // of its rows are handed over twice.
   const events = withSeq(ALPHA_EVENTS)
   const buffer = encodeSessionLog(events, { eventsPerFrame: 2 })
   const frames = splitZstdFrames(buffer)
@@ -137,20 +138,22 @@ test('what a whole read consumed is where the next read starts', () => {
     assert.equal(whole.size, buffer.length)
     assert.deepEqual(whole.records, events)
 
-    // Killed mid-write: the completed frames and the readable part of the last one.
+    // Killed mid-write: the completed frames, and the unfinished one left alone.
     writeFileSync(file.path, buffer.subarray(0, buffer.length - 5))
     const torn = readSessionLogState(file.path)
-    assert.equal(torn.size, buffer.length - 5, 'the readable part of the last frame is consumed')
+    assert.equal(torn.size, last.offset, 'the unfinished frame is left whole')
     assert.deepEqual(torn.records, events.slice(0, events.length - 2))
 
-    // Completing the frame moves the file past that offset, and the tail read from
-    // it is refused rather than handing back rows it already counted.
+    // Completing the frame lets the next read take it whole, from the boundary the
+    // previous read reported.
     writeFileSync(file.path, buffer)
-    assert.equal(readSessionLogTail(file.path, { offset: torn.size, tail: '' }), undefined)
-    // A boundary the read really ended on (the last complete frame) is accepted.
-    const clean = readSessionLogTail(file.path, { offset: last.offset, tail: '' })
-    assert.deepEqual(clean.records, events.slice(-2))
-    assert.equal(clean.offset, buffer.length)
+    const completed = readSessionLogTail(file.path, { offset: torn.size, tail: '' })
+    assert.deepEqual(completed.records, events.slice(-2))
+    assert.equal(completed.offset, buffer.length)
+
+    // A boundary that is not one is refused rather than guessed at: the bytes
+    // inside a frame cannot start a read.
+    assert.equal(readSessionLogTail(file.path, { offset: buffer.length - 5, tail: '' }), undefined)
   } finally {
     file.cleanup()
   }

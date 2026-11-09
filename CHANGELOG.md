@@ -28,9 +28,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   read stopped is reported rather than guessed; the unfinished line of that read
   travels with it, because a row split across two frames must be parsed as one
   line; and bytes that are not a frame boundary — a log rewritten to a shorter
-  file, or a frame that has been completed since its readable part was counted —
+  file, or one whose bytes at the cursor are no longer the start of a frame —
   are refused, with the whole file folded instead, which is the one read that
-  cannot double count. A log the harness rolls to a newer generation is followed,
+  cannot double count. A frame the writer did not finish is left whole rather
+  than guessed at: Zstandard yields no rows for a frame that was not written
+  whole, so none of it is counted until it is, and the read that follows takes
+  it from its own start. A log the harness rolls to a newer generation is followed,
   because the older file stays on disk and a path that still exists is not the
   record. A history that arrives *shorter* than the cursor was — a log replaced by
   a smaller record, or a stored session whose events were trimmed — is re-derived
