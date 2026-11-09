@@ -6,6 +6,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The GitHub Actions workflows are gone; the release runs on your machine.** The
+  repository carried two of them: `ci.yml`, which ran the tests on a Node 22 / 24 matrix
+  across Linux, Windows and macOS and checked what the published tarball contained, and
+  `release.yml`, which published to npm over OIDC trusted publishing and created the
+  GitHub release. Both are deleted, and everything they did is now a script on the
+  machine that does the releasing.
+
+  `scripts/release.mjs` is the release driver — `pnpm run release`. It runs the packaging
+  checks and the tests, packs the tarball, publishes it, waits for the registry to show
+  the version, and creates the GitHub release with the tarball attached; `--dry-run`
+  stops before the publish, and `--mirror-gitea` also puts the release on the Gitea
+  mirror. `scripts/check-tarball.mjs` is the packaging job — `pnpm run check:tarball` —
+  which packs the tarball, asserts what is and is not in it, installs it into a
+  throwaway project, and audits a ledger with the installed CLI. `pnpm run check` runs
+  all three.
+
+  Trusted publishing cannot survive this: it is an OIDC exchange only a GitHub Actions
+  runner can perform, and there is no runner left to make it. Publishing is local now,
+  with your own npm credentials and a one-time code at publish time. The checks the
+  workflow made are kept; the matrix it ran across four platform and Node combinations
+  is not, and that coverage is now a manual responsibility — see
+  [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#releasing).
+
 ### Fixed
 
 - **A session the ledger took from disk keeps counting while the host runs.** A

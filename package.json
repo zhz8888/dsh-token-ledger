@@ -66,6 +66,9 @@
     "test": "node --test test/*.test.mjs",
     "test:single-process": "node --test --experimental-test-isolation=none test/*.test.mjs",
     "verify": "node scripts/verify-package.mjs",
+    "check:tarball": "node scripts/check-tarball.mjs",
+    "check": "pnpm run verify && pnpm test && pnpm run check:tarball",
+    "release": "node scripts/release.mjs",
     "prepublishOnly": "pnpm run verify && pnpm test"
   },
   "devDependencies": {

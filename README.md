@@ -2,7 +2,6 @@
 
 Transparent, auditable token accounting for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
 
-[![CI](https://github.com/zhz8888/dsh-token-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/zhz8888/dsh-token-ledger/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@zhz8888/dsh-token-ledger.svg)](https://www.npmjs.com/package/@zhz8888/dsh-token-ledger)
 [![license](https://img.shields.io/npm/l/@zhz8888/dsh-token-ledger.svg)](./LICENSE)
 [![DSH](https://img.shields.io/badge/DSH-%5E0.2.0--rc.1-4c1a97)](https://github.com/deepseek-ai/deepseek-harness)

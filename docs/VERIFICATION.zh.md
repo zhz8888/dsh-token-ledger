@@ -910,12 +910,12 @@ devDependency 换成了宿主所打包的那个构建；`lib/`、`bin/`、`test/
   安装失败；每一个依赖都在 `allowBuilds` 里被显式列出，而且全都是 `false`，所以这份清单
   是一组拒绝而不是一纸放行。
 - **发布路径没有被动。** `npm publish`、`npm pack` 与 `npm view` 仍然是 npm：到达
-  registry 的 tarball、以及把它放进去的 OIDC 交换，都是 npm 自己的东西，而这条流水线
-  在这一个步骤上已经被咬过一次。
+  registry 的 tarball 是 npm 自己的东西，发布驱动脚本用的也正是 npm，与 workflow 当年
+  用的是同一个。
 
 **本轮未验证的**是：GitHub Actions 的那几个 workflow。`pnpm/action-setup@v6`、冻结安装
-以及那两个 workflow 文件都已写好，但这里没有任何东西在 runner 上执行过它们；push 之后
-的第一次 CI 运行才会真正给出答案。
+以及那两个 workflow 文件都已写好，但这里没有任何东西在 runner 上执行过它们——而且截至
+2026-11-09 它们已被删除，换成了本文档末尾描述的本地脚本。
 
 ## 改名，2026-10-28——包迁到了 @zhz8888
 
@@ -1191,6 +1191,42 @@ scanned 225 session log(s), 172520 events, 158 forked session(s), 0 unreadable
 - **第二个进程写同一个 home。** 巡查就是为这种情况存在的，巡查也量过了——但那次追加是本脚本
   做的，不是第二个 DSH 做的。
 
+## workflow 没了，2026-11-09——发布搬到了这台机器上
+
+这个仓库原本带着两个 GitHub Actions 的 workflow：`ci.yml` 在 Linux、Windows 与 macOS 上
+按 Node 22 / 24 的矩阵跑测试，并检查发布出去的 tarball 里有什么；`release.yml` 用 OIDC
+trusted publishing 发到 npm，并建好 GitHub Release。两个都已删除。它们做过的每一件事，
+现在都是发布那台机器上的一个脚本。
+
+| 原来 | 现在 |
+| --- | --- |
+| `ci.yml` 的测试矩阵 | `pnpm test`，在干活的这台机器上 |
+| `ci.yml` 的打包任务 | `pnpm run check:tarball`——`scripts/check-tarball.mjs` |
+| `release.yml` | `pnpm run release`——`scripts/release.mjs` |
+
+**在这里验证过的**（Windows，Node v24.22.2，pnpm 11.20.0）：
+
+- `pnpm test`——**17 个文件、445 个测试：444 通过、0 失败、1 跳过。** 跳过的那条是
+  *the file of connections is written owner-only*，它自己把原因说了出来：*Windows does
+  not carry POSIX permissions*。
+- `pnpm run verify`——打包不变量，这一轮没有改动。
+- `pnpm run check:tarball`——**24 项检查**：tarball 带齐安装器需要的每一个文件、`docs/`
+  只发 Markdown、没有测试或 CI 文件混进去、tarball 能装进一个临时工程、装好的 CLI 报出
+  清单里的版本号并列出 audit 命令，以及装好的 CLI 能从一个合成的会话日志里重建并审计
+  一本账本。
+- `node scripts/release.mjs --dry-run`——预检，在打包与发布之前停下。
+
+**第一次本地跑发现了什么。** 那些 workflow 从 2026-09-30 起就没有再运行过，所以此后二十
+来个提交从来没有被 runner 检查过——第一次本地跑就在 `test/session-log.test.mjs` 里发现了一
+个真实失败，出自引入增量会话日志读取的那个提交。那条测试断言：一个以未写完的帧结尾的日
+志，报出来的大小是整个文件的长度；它的前提是 Zstandard 能解出没写完的那一帧里已经写好的
+部分。不能：Node 的 Zstandard 对这样的帧一行都给不出，单次解和流式解都不行，所以那一帧
+被整体留下，报出来的边界是它前面那个边界。实现是对的，测试不是——现在测试断言的是读取器
+真正的行为，变更日志里对应的说法也已改正。
+
+**这里没有验证的**是那个矩阵。workflow 会在 Linux 上跑 Node 22 与 24、在 Windows 上跑
+Node 22、在 macOS 上跑 Node 24；本地跑只覆盖一台机器、一个 Node。这份覆盖现在是手工责任，
+不再是自动的了。除此之外，删除 workflow 这件事没有留下未验证的地方。
 ## 未验证
 
 直说吧，因为一份只列成功项的验证文件没有用：
@@ -1198,8 +1234,9 @@ scanned 225 session log(s), 172520 events, 158 forked session(s), 0 unreadable
 - **除 `0.1.2-rc.1` 与上面记录的那次 `0.2.1-rc.3` 挂载以外的 DSH 版本。** 所用到的
   API 面在这些版本线上通过检视是稳定的，不是通过测试；`0.2.1-rc.3` 只在上一节所描述
   的范围内被覆盖。
-- **非 Windows 平台。** 这些逻辑与平台无关，CI 也会跑 Linux、macOS 与 Windows 的
-  作业，但上面所有手工验证都是在 Windows 上做的。
+- **非 Windows 平台。** 这些逻辑与平台无关，但上面所有手工验证都是在 Windows 上做的。
+  那个会跑 Linux、macOS 与 Windows 作业的 CI 已经没了，所以这份覆盖现在是手工责任：在
+  你声称支持的每个平台上跑一遍 `pnpm run check`，并在发布说明里写清你跑过哪些。
 - **提供方的计费约定。** 账本数的是会话日志记录下来的东西。它不声称提供方开的账单是
   多少，而对失败、重试或部分送达的请求，那两者可能并不相同。
 - **在真实浏览器里看费率页与账单页。** 四个视图都在真 React 下被断言过，它们的标记也

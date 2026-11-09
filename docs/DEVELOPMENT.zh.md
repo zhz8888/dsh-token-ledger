@@ -66,49 +66,72 @@ DOM 属性，React 会报出来，而手写的 `createElement` 会默默接受�
 
 ## 发布
 
-**打一个 tag 就是发布。不需要在任何地方存放 token。**
+**没有流水线替你发布。你自己发。**
+
+```bash
+pnpm run release                 # 全部流程，就在这台机器上
+pnpm run release -- --dry-run    # 除了发布，其余全做
+```
+
+`pnpm run release` 跑的是 `scripts/release.mjs`，它按顺序逐步执行，每一步都要等上一步
+通过才会继续：
+
+1. **预检。** 工作区必须干净，`pnpm` 必须在 PATH 上（清单里的 `prepublishOnly` 需要它），
+   tag 必须存在且必须指向 `HEAD`，该版本必须还不在 registry 上。
+2. **闸门。** `pnpm run verify` 与 `pnpm test`——过去每次 push 都会跑的检查，现在在这里
+   跑，跑的就是这份检出。
+3. **打包。** `npm pack`，打到一个用完即删的临时目录里。
+4. **发布。** 用你自己的 npm 登录，对着 npm registry 执行
+   `npm publish --access public`。
+5. **确认真的落地。** registry 的读侧不是立刻一致的，所以脚本最多等四分钟才判定失败。
+   一次成功的发布，不会因为 `npm view` 在九十秒内回了 404 而被当成失败。
+6. **GitHub Release。** 这个 tag 会得到一个 release，并挂上 tarball。已经存在的 release
+   会被复用而不是硬碰硬，所以重跑是可行的。
+7. **Gitea 镜像**，加 `--mirror-gitea` 才会做。同一个 tag、同一份说明、同一个 tarball，
+   说明里的链接改写成指向镜像而不是 GitHub。
+
+发布以 tag 为准，tag 就是版本号：
 
 ```bash
 git tag v1.2.0 && git push origin v1.2.0
 ```
 
-tag 必须与 `package.json` 里的版本一致——workflow 不一致就拒绝发布——所以请用清单里
-那个版本，而不是照抄这个例子。
+tag 与 `package.json` 里的版本不一致、tag 不指向 `HEAD`、或者该版本已经在 registry 上时，
+脚本都会拒绝发布——已发布的版本不能被覆盖，所以这三种情况唯一的正确回答都是拒绝。
 
-这是**第一次之后**每次发布走的路。第一次发布不能用它：OIDC 无法为一个还不存在的包
-配置，所以第一次得手动发——见[发布到 npm](PUBLISHING.zh.md)。
+**你必须已经登录 npmjs.com，而且 npm CLI 版本要够新。** 发布就是一次普通的带认证发布：
+先 `npm login --registry=https://registry.npmjs.org` 登录一次，之后 npm 会在发布时向你要
+认证器上的动态口令（`--otp=123456` 可以显式传进去）。这台机器的 registry 指向哪里、
+发布失败时怎么办，见[发布到 npm](PUBLISHING.zh.md)。
 
-`release.yml` 会跑测试与打包检查、确认 tag 与 `package.json` 一致、用 OIDC
-**trusted publishing** 发布、把 tarball 挂到 GitHub Release 上，并在报告成功之前
-**断言该版本确实已在 registry 上**——所以绿色意味着已发布，而不只是尝试过。
+### workflow 过去做什么，以及为什么没了
 
-最后这条断言不是装饰。这条流水线从 v0.5.0 到 v0.8.0 每个 tag 都失败，报的是
-`404 Not Found - PUT`——它说的是"包不存在"，而真正的问题是缺凭据；而且失败之后
-registry 会有几分钟看起来是空的，尽管发布其实已经成功。两个原因都已在 workflow 里
-加了防线：
+发布过去跑在 GitHub Actions 上，用 OIDC **trusted publishing** 发布，所以不需要在任何地方
+存放长期有效的 token。trusted publishing 是一场只有 GitHub Actions runner 才能做的 OIDC
+交换，workflow 一删就没有 runner 来做这场交换了。于是发布回到本地，用你自己的 npm 凭据
+——那是你自己持有的 token，而不是仓库持有的。
 
-- **npm CLI 必须 ≥ 11.5.1。** Node 22 自带 npm 10，根本做不了 OIDC 交换。workflow
-  跑在 Node 24 上，并把版本打进日志。
-- **不能用 `actions/setup-node` 的 `registry-url` 输入。** 它会往 `.npmrc` 写
-  `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`，npm 看到这一行就认定
-  "已有凭据"，直接跳过 trusted publishing，报 `ENEEDAUTH`——在一个本就不持有凭据的
-  任务里，这读起来像"你忘了登录"。发布前现在有一道步骤：只要 `.npmrc` 里出现
-  `_authToken` 就大声失败。
+workflow 做的检查都留下来了，因为那些检查本来就值得做：
 
-npm 那边要接受它，需要在 npmjs.com 上给包配 **Trusted Publisher**（包 → Settings →
-Trusted Publisher → GitHub Actions），仓库填 `zhz8888/dsh-token-ledger`、
-workflow 填 `release.yml`、**Environment 留空**——填了一个 workflow 没有声明的
-environment 就匹配不上，registry 只会回一句
-`OIDC token exchange error - package not found`。
+| workflow 做的事 | 现在由谁做 |
+| --- | --- |
+| 每次 push 跑 `pnpm test` | `pnpm test`，作为发布闸门 |
+| 每次 push 跑 `pnpm run verify` | `pnpm run verify`，作为发布闸门 |
+| 一个把 tarball 打出来并检查内容的任务 | `pnpm run check:tarball`——同样的断言，跑在这台机器打出来的 tarball 上 |
+| 一个把 tarball 装进临时工程再审计一遍的任务 | 同上，就在 `pnpm run check:tarball` 里 |
+| 发布时核对 tag 与 `package.json` | 预检 |
+| 发布后断言该版本已在 registry 上 | 等它出现的那一步 |
+| 创建 GitHub Release 并挂上 tarball | `scripts/release.mjs` 的最后两步 |
+| 在 npmjs.com 上配 Trusted Publisher | 你自己的 npm 登录，发布时输入动态口令 |
 
-在 trusted publishing 出现之前，一个版本的首发是用
-`npm publish --access public --otp=<认证器里的 6 位数字>` 手动发的，因为 OIDC 没法在包
-存在之前配置。那条路现在依然可用，也依然需要带 2FA bypass 的 granular token，
-但它**不产生 provenance 证明**，而且 v0.8.0 那次排查正是从这条路走起——从一个过期的
-token 开始。优先用打 tag。
+### 一台机器验不了的东西
 
-重复运行是安全的：版本已在 registry 上时跳过发布步骤，GitHub Release 只在不存在时创建。
+CI 当时是在一个矩阵上跑测试的：Linux 上的 Node 22 与 24、Windows 上的 Node 22，以及
+macOS 上的 Node 24。本地跑只覆盖一台机器、一个 Node。版本范围不是摆设——CLI 要解 zstd
+的会话帧，Node 从 22.15.0 起才有这个能力——所以那个矩阵是为了兜住开发机上没有的运行时。
 
+这部分覆盖现在是手工责任：在你声称支持的每个平台和 Node 版本上跑一遍 `pnpm run check`，
+并在发布说明里写清你跑过哪些。
 
 ---
 

@@ -1,94 +1,97 @@
 # 发布到 npm
 
-[English](PUBLISHING.md) | 中文
+English | [中文](PUBLISHING.zh.md)
 
-[← 返回 README](../README.zh.md)
+[← Back to the README](../README.zh.md)
 
-从本仓库到达 npm 有两条路，而它们在起点上并不通用：
+这个包是从本仓库手工发到 npm 的。路只有一条，而且是一条脚本：
 
-| | 是什么 | 什么时候用 |
-| --- | --- | --- |
-| **推 tag** | `git push origin v1.2.0` 触发 `release.yml`，用 OIDC **trusted publishing** 发布——任何地方都不存放 token。 | 包**已经**存在于 npm、且已为本仓库配好 Trusted Publisher 之后的每一次发布。 |
-| **手动发布** | 在本仓库里执行 `npm publish`，用你自己的 npm 登录与一次性验证码。 | 一个包的**第一次**发布。OIDC 无法为一个还不存在的包配置。 |
+```bash
+pnpm run release
+```
 
-`@zhz8888/dsh-token-ledger` 正是它的第一次发布，所以要手动发一次。这一页就是手动那条路；
-等它上了 npm，把 Trusted Publisher 配好，之后每次发布又回到推 tag。
+`scripts/release.mjs` 会按顺序做完所有事：各项检查、打包、发布、等 registry 上出现这个
+版本、建 GitHub Release、把 tarball 挂上去。每一步断言什么、为什么这么断言，见
+[开发与发布](DEVELOPMENT.zh.md#发布)。
+
+留给你的只有一件脚本替你做不了的事：**已经登录 npmjs.com**。
 
 ## 开始之前
 
-**这台机器默认的 registry 是镜像，不是 npm。** npm 被配置成
-`registry=https://registry.npmmirror.com`，那是一个只读镜像：它提供包，但不接受发布。
-所以下面每一条发布命令都把官方 registry 写出来。
+**这台机器默认的 registry 是镜像，不是 npm。** npm 配的是
+`registry=https://registry.npmmirror.com`，那是一个只读镜像：它能提供包，但不接收包。
+所以下面每条发布命令都把官方 registry 明写出来，发布脚本的默认值也是它
+（`--registry` 可以改）。
 
-**你需要登录 npmjs.com。** 这台机器目前没有任何 npm 凭据——`~/.npmrc` 里只有一行
+**你必须已经登录 npmjs.com。** 这台机器目前没有 npm 凭据——`~/.npmrc` 里只有一行
 `registry`。先登录一次：
 
 ```bash
 npm login --registry=https://registry.npmjs.org
 ```
 
-它会问用户名、密码，以及（开了 2FA 的话）认证器上的一次性验证码。之后
-`npm whoami --registry=https://registry.npmjs.org` 会打印这些命令将以哪个账号发布
-——请确认那是拥有 `@zhz8888` scope 的账号。
+它会问用户名、密码，以及开了两步验证时的认证器动态口令。
+`npm whoami --registry=https://registry.npmjs.org` 随后会打印这些命令将以哪个账号发布
+——确认它就是持有 `@zhz8888` 这个 scope 的账号。
 
-**npm CLI 版本要够新。** trusted publishing 需要 npm ≥ 11.5.1；这台机器是 11.12.1。
-Node 22 自带 npm 10，根本做不了 OIDC 交换。
+**npm CLI 的版本要够新。** npm 随 Node 一起发布，发布脚本用的就是 PATH 上的那个 npm。
+Node 22 自带 npm 10，比 registry 这边要求的工具链旧；`npm --version` 会告诉你现在
+是哪一个。
 
 **pnpm 必须在你的 PATH 上。** 清单里的 `prepublishOnly` 跑的是
-`pnpm run verify && pnpm test`，而 npm 发布时就会执行这个脚本。
+`pnpm run verify && pnpm test`，npm 发布时会执行这个脚本。
 
 ## 发布
 
-**1. 停在发布提交上，工作区是干净的。**
+**1. 待在发布提交上，工作区要干净。**
 
 ```bash
-git status --short          # 必须什么都不输出
+git status --short          # 必须什么都不打印
 git log --oneline -1        # release: 1.2.0
 ```
 
-**2. 确认这个版本还没在 registry 上。**
+**2. 打 tag。**
+
+```bash
+git tag v1.2.0 && git push origin v1.2.0
+```
+
+tag 必须与 `package.json` 里的版本一致。不一致时脚本会拒绝发布；tag 不指向 `HEAD`
+时也会拒绝——发布以 tag 为准，要发布的东西就得是那个 tag。
+
+**3. 确认这个版本还不在 registry 上。**
 
 ```bash
 npm view @zhz8888/dsh-token-ledger versions --registry=https://registry.npmjs.org
 ```
 
-这里回 404，说明版本还没发出去——第一次发布时你希望看到它；**重跑**时你希望看到的是
-相反的结果。
+这里回 404 说明这个版本还没发布过——发布之前正该如此，重跑时就**不该**如此。脚本也会
+查这一条，并且拒绝覆盖已经发布的版本：已发布的版本不能被覆盖。
 
-**3. 先打个包，看看将要发布的东西。**
+**4. 跑发布脚本。**
 
 ```bash
-npm publish --dry-run --access public --registry=https://registry.npmjs.org
+pnpm run release
 ```
 
-dry run 只打印文件清单和包体积，不会上传任何东西。应该是 38 个文件：两份 README、
-`CHANGELOG.md`、`LICENSE`、`cordis.patch.yml`、`package.json`、那个可执行文件、
-`lib/` 下的 15 个模块，以及 `docs/` 下的 16 篇文档。
+它会跑测试与打包检查、打出 tarball、发布、等 registry 上出现该版本，并建好带 tarball 的
+GitHub Release。`--dry-run` 会做完除发布以外的一切，`--otp=123456` 可以显式传动态口令，
+不必等它提示输入。
 
-那份输出里有两行值得停下来看一眼，而不是划过去——它用的 registry，以及它要用的
-tag 与访问级别：
-
-```
-npm notice Publishing to https://registry.npmjs.org/ with tag latest and public access (dry-run)
-+ @zhz8888/dsh-token-ledger@1.2.0
-```
-
-如果第一行写的是那个镜像，就停下：registry 的覆盖没生效。
-
-**4. 发布。**
+如果你更想自己驱动 npm，脚本里那一步发布就是：
 
 ```bash
 npm publish --access public --registry=https://registry.npmjs.org
 ```
 
-npm 会问你要认证器上的一次性验证码。如果你用的是 token 而不是交互式登录，就把码显式传进去：
+npm 会向你要认证器上的动态口令。用 token 而不是交互登录时，显式传码：
 
 ```bash
 npm publish --access public --otp=123456 --registry=https://registry.npmjs.org
 ```
 
-在新 scope 下第一次发布时 `--access public` 不是可选项：不加它，包会被建成私有的。
-清单里已经带了 `publishConfig.access: public`，两种情况下都覆盖得住。
+在新 scope 里做首次发布时 `--access public` 不是可选项：不加它，包会以私有方式创建。
+清单里已经带了 `publishConfig.access: public`，两种方式都覆盖到了。
 
 **5. 确认它落地了。**
 
@@ -96,40 +99,32 @@ npm publish --access public --otp=123456 --registry=https://registry.npmjs.org
 npm view @zhz8888/dsh-token-ledger version --registry=https://registry.npmjs.org
 ```
 
-新 scope 下的第一次发布之后，packument 可能要一两分钟才变得可读——`dist-tags` 和
-tarball 已经上线，而读的那一侧还没跟上。那是 registry 的传播延迟，不是发布失败：
-`npm view` 连续几分钟回 404，并不代表上传没成功。
+在新 scope 里做首次发布后，packument 可能要一两分钟才可读——`dist-tags` 和 tarball 先上线，
+读侧才追上。那是 registry 的传播延迟，不是发布失败：`npm view` 回 404 几分钟并不说明上传
+没成功。发布脚本会为这件事最多等四分钟，之后才判定失败。
 
-## 然后：把后续的发布交给推 tag
+## 为什么没有 Trusted Publisher
 
-现在包已经存在，npmjs.com 就可以被告知信任这个仓库了：
+发布过去由 GitHub Actions 的 workflow 用 OIDC **trusted publishing** 完成，任何地方都不用
+存放长期有效的 token。trusted publishing 是一场只有 GitHub Actions runner 才能做的 OIDC 交换，
+所以它活不过 workflow：workflow 没了，做交换的 runner 也就没了。
 
-1. npmjs.com → **@zhz8888 / dsh-token-ledger** → Settings → **Trusted Publisher**
-   → GitHub Actions。
-2. 仓库填 `zhz8888/dsh-token-ledger`、workflow 填 `release.yml`、**environment 留空**
-   ——填了一个 workflow 没有声明的 environment 就匹配不上，registry 只会回一句
-   `OIDC token exchange error - package not found`。
-3. 保存。之后每次发布就是推一个 tag：
+于是发布回到本地，用你自己的 npm 凭据——那是你自己持有的 token，而不是仓库持有的。
+workflow 做过的检查都保留了下来，它们就是发布驱动脚本会跑的那些脚本。
 
-```bash
-git tag v1.2.0 && git push origin v1.2.0
-```
+## 出问题时
 
-`release.yml` 会跑测试与打包检查、确认 tag 与 `package.json` 一致、发布、把 tarball
-挂到 GitHub Release 上，并在报告成功之前**断言该版本确实已在 registry 上**——所以绿色
-意味着已发布，而不只是尝试过。
-
-## 出了岔子怎么办
-
-| 现象 | 是什么 |
+| 症状 | 是什么 |
 | --- | --- |
-| `npm error code ENEEDAUTH` | 没登录，或者登录的是镜像而不是 npmjs.com。`npm whoami --registry=https://registry.npmjs.org` 能看出是哪个。 |
-| `npm error code E403` / *你没有发布权限* | 登录的账号不对，或者该账号在 `@zhz8888` scope 上没有发布权限。 |
-| `npm error code EOTP`，或者它问你要验证码 | 2FA 开着。输入认证器上的六位数，或者用 `--otp=` 传进去。 |
-| `npm error 404 Not Found - PUT` | registry 找不到要发布到的那个包。第一次发布时通常是因为镜像在应答，或者 scope 还不存在。 |
-| 发布报告成功，但 `npm view` 一两分钟里回 404 | registry 传播延迟。等一会儿再问。 |
-| `npm error EPUBLISHCONFLICT` | 那个版本已经发过了。同一个版本不能覆盖——把 `package.json` 里的版本号往上提，重新发布。 |
-| 发布停在 `prepublishOnly` | `pnpm` 不在 PATH 上。那个脚本是 `pnpm run verify && pnpm test`；装上 pnpm，或者在能解析到它的 shell 里发布。 |
+| `npm error code ENEEDAUTH` | 没登录，或者登录到了镜像而不是 npmjs.com。`npm whoami --registry=https://registry.npmjs.org` 会告诉你是哪个。 |
+| `npm error code E403` / *you do not have permission to publish* | 登录的账号不对，或者该账号在 `@zhz8888` scope 上没有发布权限。 |
+| `npm error EOTP`，或者它向你要验证码 | 开了两步验证。输入认证器上的六位数字，或者用 `--otp=` 传。 |
+| `npm error 404 Not Found - PUT` | registry 找不到要发布到这个包。首次发布时通常是镜像在应答，或者 scope 还不存在。 |
+| 发布报告成功，但 `npm view` 有一两分钟回 404 | registry 传播延迟。等一下再问——发布脚本已经会为这件事最多等四分钟。 |
+| `npm error EPUBLISHCONFLICT` | 这个版本已经发布过了。版本不能被覆盖——把 `package.json` 里的版本号往上加再发一次。 |
+| 发布停在 `prepublishOnly` | PATH 上没有 pnpm。那个脚本是 `pnpm run verify && pnpm test`；装上 pnpm，或者换一个能解析到它的 shell 来发布。 |
+| 脚本拒绝：*tag 不指向 HEAD* | 你不在被打 tag 的那个提交上。`git checkout v1.2.0`（或者重新打 tag）再从那里发布。 |
+| 脚本拒绝：*已经在 registry 上* | 这个版本已发布。把 `package.json` 里的版本号往上加再发；`--force` 是留给少数你确定另有原因的情况的。 |
 
 ---
 

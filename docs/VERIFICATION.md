@@ -1008,12 +1008,13 @@ produces a ledger — not that every view was looked at again.
   `allowBuilds`, all of them `false`, so the list is a set of denials rather than a
   blanket allow.
 - **The publish path is untouched.** `npm publish`, `npm pack` and `npm view` are still
-  npm: the tarball that reaches the registry and the OIDC exchange that puts it there are
-  npm's own, and this workflow has already been bitten by that step once.
+  npm: the tarball that reaches the registry is npm's own, and the release driver publishes
+  with npm exactly as the workflow did.
 
 **Not verified this round:** the GitHub Actions workflows. `pnpm/action-setup@v6`, the
-frozen install, and the two workflow files are written, but nothing here has executed them
-on a runner; the first CI run on a push is what will actually tell.
+frozen install, and the two workflow files were written, but nothing here ever executed
+them on a runner — and as of 2026-11-09 they are gone, replaced by the local scripts
+described at the end of this document.
 
 ## The rename, 2026-10-28 — the package moved to @zhz8888
 
@@ -1336,6 +1337,50 @@ script it wraps was run directly.)
 - **A second process writing the same home.** The sweep exists for it, and the
   sweep is measured — but with the append made by this script, not by a second DSH.
 
+## The workflows are gone, 2026-11-09 — the release moved to this machine
+
+The repository carried two GitHub Actions workflows: `ci.yml`, which ran the tests on a
+Node 22 / 24 matrix across Linux, Windows and macOS and checked what the published
+tarball contained, and `release.yml`, which published to npm over OIDC trusted
+publishing and created the GitHub release. Both are deleted. Everything they did is now a
+script on the machine that does the releasing.
+
+| Was | Is now |
+| --- | --- |
+| `ci.yml`'s test matrix | `pnpm test`, on the machine doing the work |
+| `ci.yml`'s packaging job | `pnpm run check:tarball` — `scripts/check-tarball.mjs` |
+| `release.yml` | `pnpm run release` — `scripts/release.mjs` |
+
+**Verified here, on Windows under Node v24.22.2 and pnpm 11.20.0:**
+
+- `pnpm test` — **445 tests in 17 files: 444 passed, 0 failed, 1 skipped.** The skip is
+  *the file of connections is written owner-only*, which says so out loud: *Windows does
+  not carry POSIX permissions*.
+- `pnpm run verify` — the packaging invariants, unchanged by this round.
+- `pnpm run check:tarball` — **24 checks**: the tarball carries every file an installer
+  needs, `docs/` ships Markdown only, no test or CI file leaks into it, the tarball
+  installs into a throwaway project, the installed CLI reports the manifest version and
+  lists the audit command, and the installed CLI rebuilds and audits a ledger from a
+  synthetic session log.
+- `node scripts/release.mjs --dry-run` — the preflight, stopping before anything is
+  packed or published.
+
+**What the first local run found.** The workflows had not run since 2026-09-30, so the
+twenty-odd commits since then had never been checked by a runner — and the first local
+run found a real failure in `test/session-log.test.mjs`, in the commit that introduced
+the incremental session-log read. The test asserted that a log ending on an unfinished
+frame reports the whole file length, on the premise that Zstandard decodes the finished
+part of a frame that was not written whole. It does not: Node's Zstandard yields no rows
+at all for such a frame, one-shot or streaming, so the frame is left whole and the
+boundary reported is the one in front of it. The implementation was right and the test
+was not — the test now asserts what the reader actually does, and the matching claim in
+the changelog entry has been corrected.
+
+**Not verified here:** the matrix. The workflows ran the tests on Linux with Node 22 and
+24, on Windows with Node 22 and on macOS with Node 24; a local run covers one machine and
+one Node. That coverage is now a manual responsibility rather than an automatic one.
+Nothing else about the removal is unverified.
+
 ## Not verified
 
 Stated plainly, because a verification file that only lists successes is not
@@ -1344,9 +1389,11 @@ useful:
 - **DSH releases other than `0.1.2-rc.1`, and the `0.2.1-rc.3` mount recorded above.** The API
   surface used is stable across those lines by inspection, not by test; `0.2.1-rc.3` is
   covered only to the extent the section above describes.
-- **Non-Windows platforms.** The logic is platform-independent and CI runs
-  Linux, macOS and Windows jobs, but all manual verification above was on
-  Windows.
+- **Non-Windows platforms.** The logic is platform-independent, but all manual
+  verification above was on Windows. The CI that ran Linux, macOS and Windows
+  jobs is gone, so that coverage is a manual responsibility now: run
+  `pnpm run check` on each platform you claim to support, and say in the release
+  notes which ones you ran it on.
 - **Provider billing agreement.** The ledger counts what the session log
   records. It makes no claim about what a provider invoices, which can differ
   for failed, retried or partially delivered requests.
